@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Подарочные пакеты для вина</title>
+    <link rel="stylesheet" href="/static/css/styles.css">
+</head>
+<body>
+    <main>
+        <!-- Секция 1: видео + заголовок + карусель -->
+        <section class="hero-section">
+            <div class="video-half">
+                <video id="promo-video" autoplay muted playsinline loop>
+                    <source src="/static/video/video_2026-02-05_21-04-09.mp4" type="video/mp4">
+                    <p>Ваш браузер не поддерживает видео.</p>
+                </video>
+                <button id="volume-btn" class="volume-btn" aria-label="Включить звук">
+                    <svg id="volume-icon-off" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z"/>
+                    </svg>
+                    <svg id="volume-icon-on" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" style="display:none">
+                        <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/>
+                    </svg>
+                </button>
+                <h1 class="hero-title">Подарочные пакеты для вина</h1>
+            </div>
+
+            <div class="carousel-half">
+                <div id="package-carousel" class="carousel">
+                    <button class="carousel-btn prev">&larr;</button>
+                    <div class="carousel-track-container">
+                        <div id="carousel-track" class="carousel-track"></div>
+                    </div>
+                    <button class="carousel-btn next">&rarr;</button>
+                </div>
+            </div>
+
+            <div class="hero-bottom">
+                <button id="make-order-btn" class="btn btn-primary">Сделать заказ</button>
+            </div>
+        </section>
+
+        <!-- Секция 2: четверостишие + карточки заказа -->
+        <section class="order-section">
+            <p class="poem-oneline">Если нужен вам пакет, с логотипом либо без, ты наш номер запиши, не откладывай — звони</p>
+            <div class="bottle-cards">
+                <div class="bottle-card">
+                    <img src="/static/images/photo_2026-02-05_21-05-30.jpg" alt="Пакет для 1 бутылки" class="bottle-card-img">
+                    <div class="bottle-card-body">
+                        <h3>Пакет для 1 бутылки</h3>
+                        <button class="btn btn-primary order-bottle-btn" data-bottles="1">Заказать</button>
+                    </div>
+                </div>
+                <div class="bottle-card">
+                    <img src="/static/images/photo_2026-02-05_21-06-22.jpg" alt="Пакет для 2 бутылок" class="bottle-card-img">
+                    <div class="bottle-card-body">
+                        <h3>Пакет для 2 бутылок</h3>
+                        <button class="btn btn-primary order-bottle-btn" data-bottles="2">Заказать</button>
+                    </div>
+                </div>
+                <div class="bottle-card">
+                    <img src="/static/images/photo_2026-02-05_21-07-15.jpg" alt="Пакет для 3 бутылок" class="bottle-card-img">
+                    <div class="bottle-card-body">
+                        <h3>Пакет для 3 бутылок</h3>
+                        <button class="btn btn-primary order-bottle-btn" data-bottles="3">Заказать</button>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="contact-section">
+            <h2>Контакты</h2>
+            <div class="contact-info">
+                <p><strong>Телефон:</strong> <a id="contact-phone" href="#">—</a></p>
+                <p><strong>Email:</strong> <a id="contact-email" href="#">—</a></p>
+            </div>
+        </section>
+    </main>
+
+    <div id="constructor-modal" class="modal">
+        <div class="modal-content">
+            <span class="close">&times;</span>
+            <h2 id="modal-title">Конструктор пакета</h2>
+
+            <div class="package-preview">
+                <svg id="preview-svg" viewBox="0 0 200 315" xmlns="http://www.w3.org/2000/svg">
+                    <defs>
+                        <linearGradient id="bag-shine" x1="0%" y1="0%" x2="100%" y2="0%">
+                            <stop offset="0%"   stop-color="rgba(255,255,255,0.22)"/>
+                            <stop offset="45%"  stop-color="rgba(255,255,255,0)"/>
+                            <stop offset="100%" stop-color="rgba(0,0,0,0.1)"/>
+                        </linearGradient>
+                    </defs>
+
+                    <!-- Ручки (генерируются JS) -->
+                    <g id="preview-handles"></g>
+
+                    <!-- Тело пакета -->
+                    <rect id="preview-body" x="20" y="80" width="160" height="220" rx="4" fill="#c49a3c" stroke="#b08628" stroke-width="1.5"/>
+
+                    <!-- Боковые линии сгиба (генерируются JS) -->
+                    <g id="preview-folds"></g>
+
+                    <!-- Верхний отворот -->
+                    <rect id="preview-fold" x="20" y="80" width="160" height="30" rx="4" fill="rgba(0,0,0,0.12)"/>
+
+                    <!-- Блеск (для премиум бумаги) -->
+                    <rect id="preview-premium" x="20" y="80" width="160" height="220" rx="4" fill="url(#bag-shine)" style="display:none"/>
+
+                    <!-- Бутылки внутри -->
+                    <g id="preview-bottle-shapes"></g>
+
+                    <!-- Печать логотипа -->
+                    <g id="preview-print" style="display:none">
+                        <circle cx="100" cy="188" r="34" fill="rgba(255,255,255,0.88)" stroke="rgba(0,0,0,0.07)" stroke-width="1.5"/>
+                        <text x="100" y="184" text-anchor="middle" font-family="-apple-system,sans-serif" font-size="8.5" fill="#666" font-weight="600">ВАШ</text>
+                        <text x="100" y="197" text-anchor="middle" font-family="-apple-system,sans-serif" font-size="8.5" fill="#666" font-weight="600">ЛОГОТИП</text>
+                    </g>
+                </svg>
+            </div>
+
+            <form id="constructor-form">
+                <div class="form-group" id="bottles-choice">
+                    <label>Тип пакета:</label>
+                    <div class="radio-group">
+                        <label><input type="radio" name="bottles" value="1" required> Для 1 бутылки</label>
+                        <label><input type="radio" name="bottles" value="2" checked> Для 2 бутылок</label>
+                        <label><input type="radio" name="bottles" value="3"> Для 3 бутылок</label>
+                        <label><input type="radio" name="bottles" value="custom"> Произвольный размер</label>
+                        <label><input type="radio" name="bottles" value="unknown"> Размеров не знаю</label>
+                    </div>
+                </div>
+
+                <div class="form-group" id="custom-size-fields" style="display:none">
+                    <label>Размеры дна (мм):</label>
+                    <div class="custom-size-inputs">
+                        <label>Ширина <input type="number" id="custom-width" name="custom_width" min="1" placeholder="мм"></label>
+                        <label>Длина <input type="number" id="custom-length" name="custom_length" min="1" placeholder="мм"></label>
+                    </div>
+                    <label style="margin-top:8px; display:block">Высота (мм): <input type="number" id="custom-height" name="custom_height" min="1" placeholder="мм"></label>
+                </div>
+
+                <div class="form-group bottles-fixed" id="bottles-fixed" style="display:none">
+                    <span id="bottles-fixed-text"></span>
+                </div>
+
+                <div id="package-options">
+                <div class="form-group">
+                    <label for="paper-type">Тип бумаги:</label>
+                    <select id="paper-type" name="paper_type" required>
+                        <option value="">Выберите...</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="color">Цвет:</label>
+                    <select id="color" name="color" required>
+                        <option value="">Выберите...</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="handle-type">Тип ручек:</label>
+                    <select id="handle-type" name="handle_type" required>
+                        <option value="">Выберите...</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label>
+                        <input type="checkbox" id="has-print" name="has_print"> С печатью логотипа
+                    </label>
+                </div>
+
+                <div class="form-group">
+                    <label for="quantity">Количество:</label>
+                    <input type="number" id="quantity" name="quantity" min="1" value="1" required>
+                </div>
+
+                <div class="price-display">
+                    <p>Цена за единицу: <span id="unit-price">0</span> ₽</p>
+                    <p class="total-price">Итого: <span id="total-price">0</span> ₽</p>
+                    <p class="discount" id="discount-info" style="display: none;">Скидка: <span id="discount-percent">0</span>%</p>
+                </div>
+
+                <button type="button" id="calculate-btn" class="btn btn-secondary">Рассчитать цену</button>
+                </div> <!-- /package-options -->
+            </form>
+
+            <div id="order-form-section" style="display: none;">
+                <h3>Оформление заказа</h3>
+                <form id="order-form">
+                    <div class="form-group">
+                        <label for="customer-name">Имя:</label>
+                        <input type="text" id="customer-name" name="customer_name" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="customer-phone">Телефон:</label>
+                        <input type="tel" id="customer-phone" name="customer_phone" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="customer-email">Email (необязательно):</label>
+                        <input type="email" id="customer-email" name="customer_email">
+                    </div>
+
+                    <button type="submit" class="btn btn-accent">Отправить заказ</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div id="success-modal" class="modal">
+        <div class="modal-content">
+            <span class="close">&times;</span>
+            <h2>Заказ принят!</h2>
+            <p>Ваш заказ №<span id="order-number"></span> успешно оформлен.</p>
+            <p>Мы свяжемся с вами в ближайшее время.</p>
+        </div>
+    </div>
+
+    <script type="module" src="/static/js/api.js"></script>
+    <script type="module" src="/static/js/carousel.js"></script>
+    <script type="module" src="/static/js/constructor.js"></script>
+    <script type="module" src="/static/js/calculator.js"></script>
+    <script type="module" src="/static/js/order.js"></script>
+    <script type="module" src="/static/js/main.js"></script>
+</body>
+</html>

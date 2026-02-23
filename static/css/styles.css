@@ -1,0 +1,669 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    line-height: 1.6;
+    color: #1a1a1a;
+    background-color: #ffffff;
+    font-size: 16px;
+}
+
+main {
+    max-width: 1400px;
+    margin: 0 auto;
+}
+
+/* ─── Кнопки ─────────────────────────────────────────── */
+
+.btn {
+    padding: 0.875rem 1.75rem;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.9375rem;
+    font-weight: 500;
+    transition: all 0.2s ease;
+    letter-spacing: 0.01em;
+}
+
+.btn-primary {
+    background-color: #1a1a1a;
+    color: white;
+}
+
+.btn-primary:hover {
+    background-color: #333333;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.btn-secondary {
+    background-color: #f5f5f5;
+    color: #1a1a1a;
+    border: 1px solid #e8e8e8;
+}
+
+.btn-secondary:hover {
+    background-color: #e8e8e8;
+    border-color: #d0d0d0;
+}
+
+.btn-accent {
+    background-color: #000000;
+    color: white;
+}
+
+.btn-accent:hover {
+    background-color: #333333;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+
+/* ─── Секция 1: герой ────────────────────────────────── */
+
+.hero-section {
+    margin-bottom: 0;
+    overflow: hidden;
+}
+
+.video-half {
+    position: relative;
+}
+
+.video-half video {
+    width: 100%;
+    max-height: 72vh;
+    object-fit: cover;
+    display: block;
+    pointer-events: none;
+}
+
+.volume-btn {
+    position: absolute;
+    top: 1rem;
+    right: 1rem;
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    border: none;
+    background: rgba(0, 0, 0, 0.45);
+    color: #ffffff;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.2s ease;
+    z-index: 10;
+}
+
+.volume-btn:hover {
+    background: rgba(0, 0, 0, 0.7);
+}
+
+.volume-btn svg {
+    width: 22px;
+    height: 22px;
+}
+
+.hero-title {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    text-align: center;
+    padding: 1.5rem 2rem;
+    font-size: 2rem;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    color: #ffffff;
+    white-space: nowrap;
+    background: linear-gradient(to top, rgba(0,0,0,0.55) 0%, transparent 100%);
+}
+
+.carousel-half {
+    padding: 2rem 2rem 0;
+}
+
+.hero-bottom {
+    padding: 2rem;
+    text-align: center;
+}
+
+/* ─── Карусель ────────────────────────────────────────── */
+
+.carousel {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+}
+
+.carousel-btn {
+    background-color: #ffffff;
+    color: #1a1a1a;
+    border: 1px solid #e8e8e8;
+    padding: 0.75rem;
+    cursor: pointer;
+    border-radius: 50%;
+    font-size: 1.25rem;
+    width: 48px;
+    height: 48px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+    flex-shrink: 0;
+}
+
+.carousel-btn:hover {
+    background-color: #f8f8f8;
+    border-color: #d0d0d0;
+    transform: scale(1.05);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+}
+
+.carousel-track-container {
+    overflow: hidden;
+    flex: 1;
+}
+
+.carousel-track {
+    display: flex;
+    gap: 1.5rem;
+    transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.carousel-item {
+    min-width: 280px;
+    background-color: #ffffff;
+    padding: 0;
+    border-radius: 12px;
+    text-align: left;
+    border: 1px solid #f0f0f0;
+    overflow: hidden;
+    transition: all 0.3s ease;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+    animation: fadeInUp 0.4s ease;
+}
+
+.carousel-item:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+    border-color: #e0e0e0;
+}
+
+.carousel-item img {
+    width: 100%;
+    height: 280px;
+    object-fit: cover;
+    display: block;
+    transition: transform 0.3s ease;
+}
+
+.carousel-item:hover img {
+    transform: scale(1.02);
+}
+
+.carousel-item h3 {
+    margin: 1rem 1rem 0.5rem;
+    color: #1a1a1a;
+    font-size: 1rem;
+    font-weight: 500;
+    line-height: 1.4;
+}
+
+.carousel-item p {
+    margin: 0 1rem 0.75rem;
+    color: #666666;
+    font-size: 0.875rem;
+}
+
+.carousel-item .price {
+    font-weight: 600;
+    color: #1a1a1a;
+    font-size: 1.125rem;
+    margin: 0 1rem 1rem;
+    display: block;
+}
+
+.carousel-track:empty::before {
+    content: "Загрузка товаров...";
+    display: block;
+    text-align: center;
+    padding: 2rem;
+    color: #999;
+}
+
+/* ─── Секция 2: заказ ─────────────────────────────────── */
+
+.order-section {
+    padding: 0 2rem 3rem;
+    margin-bottom: 0;
+}
+
+.poem-oneline {
+    text-align: center;
+    font-size: 1.75rem;
+    font-weight: 600;
+    color: #1a1a1a;
+    margin-bottom: 3rem;
+    letter-spacing: 0.04em;
+    line-height: 1.4;
+    padding: 1.5rem 2rem;
+    border-top: 2px solid #1a1a1a;
+    border-bottom: 2px solid #1a1a1a;
+}
+
+.bottle-cards {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 2rem;
+}
+
+.bottle-card {
+    background-color: #ffffff;
+    border: 1px solid #f0f0f0;
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+    display: flex;
+    flex-direction: column;
+    transition: all 0.3s ease;
+}
+
+.bottle-card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+    border-color: #e0e0e0;
+}
+
+.bottle-card-img {
+    width: 100%;
+    height: 280px;
+    object-fit: cover;
+    display: block;
+    transition: transform 0.3s ease;
+}
+
+.bottle-card:hover .bottle-card-img {
+    transform: scale(1.03);
+}
+
+.bottle-card-body {
+    padding: 1.5rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1rem;
+}
+
+.bottle-card h3 {
+    font-size: 1.125rem;
+    font-weight: 600;
+    color: #1a1a1a;
+    text-align: center;
+}
+
+/* ─── Контакты ────────────────────────────────────────── */
+
+.contact-section {
+    background-color: #f8f8f8;
+    padding: 3rem 2rem;
+    border-radius: 12px;
+    text-align: center;
+    border: 1px solid #f0f0f0;
+    margin: 0 2rem 2rem;
+}
+
+.contact-section h2 {
+    margin-bottom: 1.5rem;
+    color: #1a1a1a;
+    font-size: 1.75rem;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+}
+
+.contact-info p {
+    margin: 0.75rem 0;
+    font-size: 1rem;
+    color: #666666;
+}
+
+.contact-info a {
+    color: #1a1a1a;
+    text-decoration: none;
+    font-weight: 500;
+    transition: color 0.2s ease;
+}
+
+.contact-info a:hover {
+    color: #333333;
+    text-decoration: underline;
+}
+
+/* ─── Модальные окна ──────────────────────────────────── */
+
+.modal {
+    display: none;
+    position: fixed;
+    z-index: 1000;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.6);
+    overflow: auto;
+    backdrop-filter: blur(4px);
+}
+
+.modal-content {
+    background-color: white;
+    margin: 3% auto;
+    padding: 2.5rem;
+    border-radius: 12px;
+    max-width: 640px;
+    position: relative;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+    animation: modalFadeIn 0.3s ease;
+}
+
+@keyframes modalFadeIn {
+    from { opacity: 0; transform: translateY(-20px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes fadeInUp {
+    from { opacity: 0; transform: translateY(20px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+
+.close {
+    position: absolute;
+    right: 1.25rem;
+    top: 1.25rem;
+    font-size: 1.75rem;
+    cursor: pointer;
+    color: #999;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    transition: all 0.2s ease;
+    line-height: 1;
+}
+
+.close:hover {
+    color: #1a1a1a;
+    background-color: #f5f5f5;
+}
+
+.modal-content h2 {
+    font-size: 1.75rem;
+    font-weight: 600;
+    margin-bottom: 1.5rem;
+    color: #1a1a1a;
+    letter-spacing: -0.02em;
+}
+
+.modal-content h3 {
+    font-size: 1.375rem;
+    font-weight: 600;
+    margin-bottom: 1.25rem;
+    color: #1a1a1a;
+    letter-spacing: -0.01em;
+}
+
+/* ─── Форма ────────────────────────────────────────────── */
+
+.form-group {
+    margin-bottom: 1.5rem;
+}
+
+.form-group label {
+    display: block;
+    margin-bottom: 0.625rem;
+    font-weight: 500;
+    color: #1a1a1a;
+    font-size: 0.9375rem;
+}
+
+.form-group input[type="text"],
+.form-group input[type="email"],
+.form-group input[type="tel"],
+.form-group input[type="number"],
+.form-group select {
+    width: 100%;
+    padding: 0.75rem 1rem;
+    border: 1px solid #e8e8e8;
+    border-radius: 6px;
+    font-size: 1rem;
+    font-family: inherit;
+    transition: all 0.2s ease;
+    background-color: #ffffff;
+    color: #1a1a1a;
+}
+
+.form-group input[type="text"]:focus,
+.form-group input[type="email"]:focus,
+.form-group input[type="tel"]:focus,
+.form-group input[type="number"]:focus,
+.form-group select:focus {
+    outline: none;
+    border-color: #1a1a1a;
+    box-shadow: 0 0 0 3px rgba(26, 26, 26, 0.1);
+}
+
+.form-group input[type="checkbox"] {
+    width: 18px;
+    height: 18px;
+    margin-right: 0.5rem;
+    cursor: pointer;
+    accent-color: #1a1a1a;
+}
+
+.radio-group {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+
+.radio-group label {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.4rem 0.9rem;
+    border: 1.5px solid #e0e0e0;
+    border-radius: 20px;
+    cursor: pointer;
+    font-weight: 400;
+    font-size: 0.9rem;
+    background: #fafafa;
+    transition: border-color 0.15s, background 0.15s, color 0.15s;
+    user-select: none;
+}
+
+.radio-group label:hover {
+    border-color: #999;
+    background: #f0f0f0;
+}
+
+.radio-group label:has(input[type="radio"]:checked) {
+    background: #1a1a1a;
+    color: #ffffff;
+    border-color: #1a1a1a;
+}
+
+/* Скрываем нативный кружок */
+.radio-group input[type="radio"] {
+    appearance: none;
+    -webkit-appearance: none;
+    position: absolute;
+    opacity: 0;
+    width: 0;
+    height: 0;
+    margin: 0;
+}
+
+/* Опция "Размеров не знаю" — жирная, с тёмной рамкой */
+.radio-group label:has(input[value="unknown"]) {
+    font-weight: 700;
+    border-color: #1a1a1a;
+    border-width: 2px;
+}
+
+.radio-group label:has(input[value="unknown"]:checked) {
+    background: #1a1a1a;
+    color: #ffffff;
+}
+
+.package-preview {
+    display: flex;
+    justify-content: center;
+    padding: 1.25rem 0 1rem;
+    margin-bottom: 1.5rem;
+    background: #f8f8f8;
+    border-radius: 8px;
+}
+
+#preview-svg {
+    width: 110px;
+    height: auto;
+    filter: drop-shadow(0 6px 16px rgba(0, 0, 0, 0.18));
+}
+
+.bottles-fixed #bottles-fixed-text {
+    display: inline-block;
+    background: #f5f5f5;
+    border: 1px solid #e8e8e8;
+    border-radius: 6px;
+    padding: 0.5rem 1rem;
+    font-weight: 500;
+    font-size: 0.9375rem;
+    color: #1a1a1a;
+}
+
+.price-display {
+    background-color: #f8f8f8;
+    padding: 1.5rem;
+    border-radius: 8px;
+    margin: 1.5rem 0;
+    border: 1px solid #f0f0f0;
+}
+
+.price-display p {
+    margin: 0.5rem 0;
+    color: #666666;
+    font-size: 0.9375rem;
+}
+
+.price-display .total-price {
+    font-size: 1.75rem;
+    font-weight: 600;
+    color: #1a1a1a;
+    margin-top: 0.75rem;
+}
+
+.discount {
+    color: #28a745;
+    font-weight: 500;
+}
+
+#success-modal .modal-content {
+    text-align: center;
+}
+
+#success-modal h2 {
+    color: #28a745;
+    margin-bottom: 1rem;
+}
+
+#success-modal p {
+    color: #666666;
+    margin: 0.75rem 0;
+    font-size: 1rem;
+}
+
+#order-number {
+    font-weight: 600;
+    color: #1a1a1a;
+    font-size: 1.125rem;
+}
+
+.modal-content::-webkit-scrollbar { width: 8px; }
+.modal-content::-webkit-scrollbar-track { background: #f1f1f1; border-radius: 4px; }
+.modal-content::-webkit-scrollbar-thumb { background: #ccc; border-radius: 4px; }
+.modal-content::-webkit-scrollbar-thumb:hover { background: #999; }
+
+.btn:focus,
+.form-group input:focus,
+.form-group select:focus {
+    outline: 2px solid #1a1a1a;
+    outline-offset: 2px;
+}
+
+/* ─── Адаптив ─────────────────────────────────────────── */
+
+@media (max-width: 768px) {
+    .hero-title {
+        font-size: 1.375rem;
+        white-space: normal;
+        padding: 1.5rem 1rem;
+    }
+
+    .carousel-half {
+        padding: 0 1rem;
+    }
+
+    .carousel-item {
+        min-width: 260px;
+    }
+
+    .carousel-item img {
+        height: 240px;
+    }
+
+    .carousel-btn {
+        width: 40px;
+        height: 40px;
+        font-size: 1rem;
+    }
+
+    .order-section {
+        padding: 2rem 1rem;
+    }
+
+    .poem-oneline {
+        font-size: 1.25rem;
+        padding: 1rem;
+    }
+
+    .bottle-cards {
+        grid-template-columns: 1fr;
+        gap: 1.5rem;
+    }
+
+    .bottle-card-img {
+        height: 220px;
+    }
+
+    .contact-section {
+        margin: 0 1rem 1rem;
+    }
+
+    .modal-content {
+        margin: 5% auto;
+        padding: 1.5rem;
+        max-width: 95%;
+    }
+
+    .btn {
+        padding: 0.75rem 1.5rem;
+        font-size: 0.875rem;
+    }
+}

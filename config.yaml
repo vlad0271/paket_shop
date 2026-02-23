@@ -1,0 +1,13 @@
+contacts:
+  phone: "+7(916)830-07-32"
+  email: "sale@retailpack.ru"
+
+standard_sizes:
+  - key: "S"
+    width: 250
+    length: 250
+    height: 250
+  - key: "L"
+    width: 330
+    length: 330
+    height: 400
