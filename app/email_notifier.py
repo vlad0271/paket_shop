@@ -54,13 +54,14 @@ def send_order_notification(order) -> None:
         )
 
     url = f"https://api.telegram.org/bot{token}/sendMessage"
-    data = json.dumps({"chat_id": chat_id, "text": text}).encode("utf-8")
-    req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"})
+    chat_ids = [cid.strip() for cid in chat_id.split(",") if cid.strip()]
 
-    with urllib.request.urlopen(req, timeout=10) as resp:
-        result = json.loads(resp.read())
-
-    if not result.get("ok"):
-        raise RuntimeError(f"Telegram API error: {result}")
+    for cid in chat_ids:
+        data = json.dumps({"chat_id": cid, "text": text}).encode("utf-8")
+        req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"})
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            result = json.loads(resp.read())
+        if not result.get("ok"):
+            raise RuntimeError(f"Telegram API error: {result}")
 
     logging.info(f"Уведомление о заказе #{order.id} отправлено в Telegram")
