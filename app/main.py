@@ -78,6 +78,23 @@ def get_standard_sizes():
     return config.get("standard_sizes", [])
 
 
+@app.get("/api/card-images")
+def get_card_images():
+    """Возвращает списки фото для карточек 1/2/3 бутылки из static/images/cards/{n}/."""
+    EXTENSIONS = {'.jpg', '.jpeg', '.png', '.webp'}
+    result = {}
+    cards_dir = STATIC_IMAGES_DIR / "cards"
+    for bottles in ["1", "2", "3"]:
+        folder = cards_dir / bottles
+        images = []
+        if folder.is_dir():
+            for f in sorted(folder.iterdir()):
+                if f.suffix.lower() in EXTENSIONS:
+                    images.append(f"/static/images/cards/{bottles}/{f.name}")
+        result[bottles] = images
+    return result
+
+
 @app.get("/")
 def read_root():
     index_file = FRONTEND_DIR / "index.html"

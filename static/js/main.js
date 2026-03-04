@@ -10,6 +10,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     initOrderForm();
     initVideoHandling();
     loadContacts();
+    loadCardImages();
 });
 
 async function loadContacts() {
@@ -24,6 +25,34 @@ async function loadContacts() {
     const emailEl = document.getElementById('contact-email');
     emailEl.href = `mailto:${email}`;
     emailEl.textContent = email;
+}
+
+async function loadCardImages() {
+    const response = await fetch('/api/card-images');
+    if (!response.ok) return;
+    const data = await response.json();
+
+    document.querySelectorAll('.bottle-card').forEach(card => {
+        const bottles = card.querySelector('.order-bottle-btn')?.dataset.bottles;
+        const images = data[bottles] || [];
+        if (!images.length) return;
+
+        const img = card.querySelector('.bottle-card-img');
+        const counter = card.querySelector('.card-img-counter');
+        let current = 0;
+
+        img.src = images[0];
+
+        if (images.length > 1) {
+            counter.textContent = `1 / ${images.length}`;
+            img.style.cursor = 'pointer';
+            img.addEventListener('click', () => {
+                current = (current + 1) % images.length;
+                img.src = images[current];
+                counter.textContent = `${current + 1} / ${images.length}`;
+            });
+        }
+    });
 }
 
 function initVideoHandling() {
