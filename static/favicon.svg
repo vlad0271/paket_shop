@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <!-- Bag body -->
+  <rect x="3" y="11" width="26" height="18" rx="1.5" fill="#c49a3c"/>
+  <!-- Bottom shadow fold -->
+  <rect x="3" y="25" width="26" height="4" rx="1.5" fill="#a07828"/>
+  <!-- Left side fold -->
+  <polygon points="3,11 8,11 8,29 3,29" fill="#b08828"/>
+  <!-- Right side fold -->
+  <polygon points="29,11 24,11 24,29 29,29" fill="#b08828"/>
+  <!-- Top flap -->
+  <rect x="3" y="11" width="26" height="4" rx="1" fill="#a07828"/>
+  <!-- Rope handle left arc -->
+  <path d="M10 11 C10 4, 14 3, 16 3" fill="none" stroke="#7a5c1e" stroke-width="2" stroke-linecap="round"/>
+  <!-- Rope handle right arc -->
+  <path d="M22 11 C22 4, 18 3, 16 3" fill="none" stroke="#7a5c1e" stroke-width="2" stroke-linecap="round"/>
+</svg>

@@ -95,6 +95,11 @@ def get_card_images():
     return result
 
 
+@app.get("/favicon.ico", include_in_schema=False)
+def favicon():
+    return FileResponse(str(STATIC_DIR / "favicon.svg"), media_type="image/svg+xml")
+
+
 @app.get("/")
 def read_root():
     index_file = FRONTEND_DIR / "index.html"
