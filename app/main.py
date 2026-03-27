@@ -7,7 +7,7 @@ load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, Response
-from app.api import packages, calculator, orders
+from app.api import packages, calculator, orders, admin
 from app.database import init_db
 
 # Получаем абсолютный путь к корню проекта (папка paket)
@@ -25,6 +25,7 @@ app = FastAPI(title="Craft Paper Package Store")
 app.include_router(packages.router)
 app.include_router(calculator.router)
 app.include_router(orders.router)
+app.include_router(admin.router)
 
 
 # Заглушка «Нет изображения» (SVG) — видна в интерфейсе (строка: в bytes нельзя кириллицу)
