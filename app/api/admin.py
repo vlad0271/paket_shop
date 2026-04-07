@@ -267,7 +267,7 @@ def tool_disable_autotargeting(ad_group_ids: list) -> str:
     Единственный способ — отключить автотаргетинг на уровне группы через adgroups.update.
     """
     groups_payload = [
-        {"Id": gid, "AutotargetingEnabled": "NO"}
+        {"Id": gid, "TextAdGroup": {"AutotargetingEnabled": "NO"}}
         for gid in ad_group_ids
     ]
     resp = requests.post(f'{API_URL}/adgroups', headers=D_HEADERS, json={
