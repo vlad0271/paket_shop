@@ -269,6 +269,8 @@ def tool_disable_autotargeting(ad_group_ids: list) -> str:
         "method": "suspend",
         "params": {"SelectionCriteria": {"AdGroupIds": ad_group_ids}}
     }, timeout=30)
+    if not resp.text.strip():
+        return f"Пустой ответ, HTTP {resp.status_code}. Эндпоинт /autotargetings недоступен."
     data = resp.json()
     if 'error' in data:
         return f"Ошибка API: {data['error']}"
