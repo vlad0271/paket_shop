@@ -261,6 +261,103 @@ def tool_get_ad_groups(campaign_id: int = None) -> str:
     return "\n".join(lines)
 
 
+def tool_get_keyword_stats(days: int = 7) -> str:
+    if days <= 7:
+        date_range = "LAST_7_DAYS"
+    elif days <= 14:
+        date_range = "LAST_14_DAYS"
+    else:
+        date_range = "LAST_30_DAYS"
+
+    body = {
+        "params": {
+            "SelectionCriteria": {},
+            "FieldNames": ["CampaignId", "CampaignName", "AdGroupId", "CriterionId",
+                           "Criterion", "CriterionType", "Impressions", "Clicks",
+                           "Ctr", "AvgCpc", "Cost"],
+            "ReportName": f"KwStats {datetime.now().strftime('%Y%m%d%H%M%S')}",
+            "ReportType": "CRITERIA_PERFORMANCE_REPORT",
+            "DateRangeType": date_range,
+            "Format": "TSV",
+            "IncludeVAT": "NO",
+            "IncludeDiscount": "NO"
+        }
+    }
+    for _ in range(10):
+        resp = requests.post(REPORTS_URL, headers=D_REPORT_HEADERS, json=body, timeout=60)
+        if resp.status_code == 200:
+            reader = csv.DictReader(io.StringIO(resp.text), delimiter='\t')
+            rows = [r for r in reader if int(r['CampaignId']) in OUR_CAMPAIGN_IDS]
+            if not rows:
+                return "Нет данных за выбранный период."
+            lines = [f"Статистика по ключевым словам за {days} дней:\n"]
+            current_campaign = None
+            for r in sorted(rows, key=lambda x: (x['CampaignId'], -int(x['Clicks'] or 0))):
+                if r['CampaignName'] != current_campaign:
+                    current_campaign = r['CampaignName']
+                    lines.append(f"\n{r['CampaignName']}:")
+                kw = r['Criterion'] if r['Criterion'] != '--' else '---autotargeting'
+                lines.append(
+                    f"  [{r['CriterionType']}] \"{kw}\"  "
+                    f"Показы:{r['Impressions']}  Клики:{r['Clicks']}  "
+                    f"CTR:{r['Ctr']}%  CPC:{r['AvgCpc']}₽  Расход:{r['Cost']}₽"
+                )
+            return "\n".join(lines)
+        elif resp.status_code in (201, 202):
+            time.sleep(int(resp.headers.get('retryIn', 5)))
+        else:
+            return f"Ошибка Reports API {resp.status_code}: {resp.text[:300]}"
+    return "Отчёт не готов после 10 попыток."
+
+
+def tool_create_ad_group(campaign_id: int, name: str) -> str:
+    """Создаёт группу объявлений с отключённым автотаргетингом."""
+    resp = requests.post(f'{API_URL}/adgroups', headers=D_HEADERS, json={
+        "method": "add",
+        "params": {
+            "AdGroups": [{
+                "CampaignId": campaign_id,
+                "Name": name,
+                "RegionIds": [1],
+                "TextAdGroup": {"AutotargetingEnabled": "NO"}
+            }]
+        }
+    }, timeout=30)
+    data = resp.json()
+    if 'error' in data:
+        return f"Ошибка API: {data['error']}"
+    results = data.get('result', {}).get('AddResults', [])
+    if not results:
+        return f"Пустой ответ: {json.dumps(data, ensure_ascii=False)}"
+    errors = results[0].get('Errors')
+    if errors:
+        return f"Ошибка создания группы: {errors}"
+    group_id = results[0].get('Id')
+    return f"Группа создана. ID: {group_id}  Автотаргетинг: отключён"
+
+
+def tool_archive_ad_group(ad_group_id: int) -> str:
+    """Архивирует группу объявлений (остановить и скрыть старую группу)."""
+    # Сначала останавливаем
+    resp = requests.post(f'{API_URL}/adgroups', headers=D_HEADERS, json={
+        "method": "suspend",
+        "params": {"SelectionCriteria": {"Ids": [ad_group_id]}}
+    }, timeout=30)
+    data = resp.json()
+    if 'error' in data:
+        return f"Ошибка suspend: {data['error']}"
+
+    # Затем архивируем
+    resp2 = requests.post(f'{API_URL}/adgroups', headers=D_HEADERS, json={
+        "method": "archive",
+        "params": {"SelectionCriteria": {"Ids": [ad_group_id]}}
+    }, timeout=30)
+    data2 = resp2.json()
+    if 'error' in data2:
+        return f"Группа остановлена, но архивировать не удалось: {data2['error']}"
+    return f"Группа {ad_group_id} остановлена и заархивирована."
+
+
 def tool_disable_autotargeting(ad_group_ids: list) -> str:
     """Отключает автотаргетинг через эндпоинт /autotargetings по ID групп объявлений.
     ID групп берутся из get_keywords (поле AdGroupId у строки с ---autotargeting).
@@ -282,6 +379,60 @@ def tool_disable_autotargeting(ad_group_ids: list) -> str:
     if bad:
         return f"Ошибки: {json.dumps(bad, ensure_ascii=False)}"
     return f"Автотаргетинг отключён в {ok} из {len(ad_group_ids)} группах."
+
+
+# ============================================================================
+# ПАМЯТЬ АГЕНТА
+# ============================================================================
+
+MEMORY_FILE = Path(__file__).resolve().parent.parent.parent / "logs" / "agent_memory.json"
+MAX_MEMORY_ENTRIES = 30
+
+
+def _load_memory() -> dict:
+    if MEMORY_FILE.exists():
+        try:
+            return json.loads(MEMORY_FILE.read_text(encoding='utf-8'))
+        except Exception:
+            return {}
+    return {}
+
+
+def _save_memory_file(data: dict):
+    # Удаляем самые старые записи если превышен лимит
+    if len(data) > MAX_MEMORY_ENTRIES:
+        sorted_keys = sorted(data, key=lambda k: data[k].get('updated', ''))
+        for k in sorted_keys[:len(data) - MAX_MEMORY_ENTRIES]:
+            del data[k]
+    MEMORY_FILE.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding='utf-8')
+
+
+def tool_save_memory(key: str, value: str) -> str:
+    data = _load_memory()
+    data[key] = {"value": value, "updated": datetime.now().strftime('%Y-%m-%d %H:%M')}
+    _save_memory_file(data)
+    return f"Сохранено в память: [{key}] = {value}"
+
+
+def tool_read_memory() -> str:
+    data = _load_memory()
+    if not data:
+        return "Память пуста."
+    lines = ["Содержимое памяти:\n"]
+    for key, entry in sorted(data.items(), key=lambda x: x[1].get('updated', ''), reverse=True):
+        lines.append(f"[{entry['updated']}] {key}: {entry['value']}")
+    return "\n".join(lines)
+
+
+def _memory_context() -> str:
+    """Возвращает содержимое памяти для системного промпта."""
+    data = _load_memory()
+    if not data:
+        return ""
+    lines = ["\n\nПАМЯТЬ (накопленный контекст из прошлых сессий):"]
+    for key, entry in sorted(data.items(), key=lambda x: x[1].get('updated', ''), reverse=True):
+        lines.append(f"- [{entry['updated']}] {key}: {entry['value']}")
+    return "\n".join(lines)
 
 
 # ============================================================================
@@ -344,6 +495,42 @@ DEEPSEEK_TOOLS = [
         "Список групп объявлений. Нужно перед добавлением ключевых слов.",
         {"campaign_id": {"type": "integer", "description": "ID кампании (опционально)"}}),
 
+    _fn("get_keyword_stats",
+        "Статистика по каждому ключевому слову: показы, клики, CTR, CPC, расход. "
+        "Показывает ---autotargeting отдельной строкой — виден его реальный расход. "
+        "Использовать для анализа эффективности отдельных ключей.",
+        {"days": {"type": "integer", "description": "Период: 7, 14 или 30 дней", "enum": [7, 14, 30]}}),
+
+    _fn("save_memory",
+        "Сохранить важный факт в долгосрочную память. Используй после каждого значимого действия: "
+        "изменения ставок, бюджетов, ключей, наблюдений по статистике. "
+        "Память доступна в следующих сессиях.",
+        {
+            "key": {"type": "string", "description": "Короткий ключ (например: autotargeting_status, bid_магазины, наблюдение_CTR)"},
+            "value": {"type": "string", "description": "Значение — факт или решение с датой"},
+        },
+        required=["key", "value"]),
+
+    _fn("read_memory",
+        "Прочитать всю сохранённую память из прошлых сессий.",
+        {}),
+
+    _fn("create_ad_group",
+        "Создать новую группу объявлений с ОТКЛЮЧЁННЫМ автотаргетингом. "
+        "Использовать при пересоздании групп: создать новую → добавить ключи → заархивировать старую.",
+        {
+            "campaign_id": {"type": "integer", "description": "ID кампании"},
+            "name": {"type": "string", "description": "Название новой группы"},
+        },
+        required=["campaign_id", "name"]),
+
+    _fn("archive_ad_group",
+        "Остановить и заархивировать группу объявлений. "
+        "Использовать после пересоздания группы — для деактивации старой группы с автотаргетингом. "
+        "Только после явного подтверждения пользователя.",
+        {"ad_group_id": {"type": "integer", "description": "ID группы для архивирования"}},
+        required=["ad_group_id"]),
+
     _fn("disable_autotargeting",
         "Отключить автотаргетинг (---autotargeting) через /autotargetings API. "
         "Использовать вместо delete_keywords когда пользователь хочет отключить ---autotargeting. "
@@ -357,7 +544,12 @@ TOOL_FUNCTIONS = {
     "get_keywords":       lambda i: tool_get_keywords(i.get("campaign_id")),
     "delete_keywords":    lambda i: tool_delete_keywords(i["keyword_ids"]),
     "add_keywords":       lambda i: tool_add_keywords(i["ad_group_id"], i["keywords"]),
+    "create_ad_group":    lambda i: tool_create_ad_group(i["campaign_id"], i["name"]),
+    "archive_ad_group":   lambda i: tool_archive_ad_group(i["ad_group_id"]),
     "disable_autotargeting": lambda i: tool_disable_autotargeting(i["ad_group_ids"]),
+    "get_keyword_stats":  lambda i: tool_get_keyword_stats(i.get("days", 7)),
+    "save_memory":        lambda i: tool_save_memory(i["key"], i["value"]),
+    "read_memory":        lambda i: tool_read_memory(),
     "update_bid":         lambda i: tool_update_bid(i["campaign_id"], i["bid_rub"]),
     "update_budget":      lambda i: tool_update_budget(i["campaign_id"], i["budget_rub"]),
     "get_ad_groups":      lambda i: tool_get_ad_groups(i.get("campaign_id")),
@@ -379,7 +571,8 @@ SYSTEM_PROMPT = """Ты AI-ассистент для управления рек
 2. Перед изменением ставок/бюджетов — объясни причину, назови конкретные цифры, спроси подтверждение
 3. Если нет данных для анализа — сначала вызови get_campaign_stats
 4. Отвечай на русском. Будь конкретен: цифры, ID, названия кампаний.
-5. "---autotargeting" — это НЕ обычный ключ. Его нельзя удалить через delete_keywords. Для отключения используй ТОЛЬКО disable_autotargeting с AdGroupId групп. Сначала вызови get_keywords, найди строки с "---autotargeting", возьми поле AdGroupId (не ID ключа!).
+5. Для отключения автотаргетинга — пересоздай группу: (1) get_keywords → собери ключи кроме ---autotargeting, (2) create_ad_group(campaign_id, новое_имя) → получи новый ID, (3) add_keywords в новую группу, (4) archive_ad_group(старый_ID). Делай по одной кампании за раз, спрашивай подтверждение перед archive_ad_group.
+6. После каждого значимого действия (изменение ставки, бюджета, ключей, важное наблюдение) — вызывай save_memory чтобы сохранить факт для следующих сессий. Память уже загружена в контекст автоматически.
 
 Ограничения:
 - Отвечай ТОЛЬКО на вопросы, связанные с Яндекс Директ, рекламными кампаниями, ключевыми словами, ставками и бюджетами этого бизнеса.
@@ -446,9 +639,10 @@ async def chat_stream(messages: list) -> AsyncGenerator[str, None]:
 
     client = OpenAI(api_key=api_key, base_url="https://api.deepseek.com")
 
-    # Системное сообщение идёт первым, затем история
-    api_messages = [{"role": "system", "content": SYSTEM_PROMPT}]
-    api_messages += [{"role": m["role"], "content": m["content"]} for m in messages]
+    # Системное сообщение + память, затем последние 20 сообщений чата
+    system_with_memory = SYSTEM_PROMPT + _memory_context()
+    api_messages = [{"role": "system", "content": system_with_memory}]
+    api_messages += [{"role": m["role"], "content": m["content"]} for m in messages[-20:]]
 
     log_tools = []       # [{name, input}] — все вызовы за сессию
     log_assistant = ""   # итоговый текст агента
