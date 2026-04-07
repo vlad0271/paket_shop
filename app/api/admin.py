@@ -261,30 +261,27 @@ def tool_get_ad_groups(campaign_id: int = None) -> str:
     return "\n".join(lines)
 
 
-def tool_disable_autotargeting(ad_group_ids: list) -> str:
-    """Отключает автотаргетинг для указанных групп объявлений.
-    ---autotargeting нельзя удалить через keywords.delete — это системный псевдо-ключ.
-    Единственный способ — отключить автотаргетинг на уровне группы через adgroups.update.
+def tool_disable_autotargeting(keyword_ids: list) -> str:
+    """Приостанавливает автотаргетинг через keywords.suspend по ID псевдо-ключа ---autotargeting.
+    Удалить ---autotargeting нельзя — это системный псевдо-ключ.
+    Suspend работает даже для него и эффективно отключает автотаргетинг.
+    ID ключей ---autotargeting берутся из get_keywords (поле ID).
     """
-    groups_payload = [
-        {"Id": gid, "AutotargetingEnabled": "NO"}
-        for gid in ad_group_ids
-    ]
-    resp = requests.post(f'{API_URL}/adgroups', headers=D_HEADERS, json={
-        "method": "update",
-        "params": {"AdGroups": groups_payload}
+    resp = requests.post(f'{API_URL}/keywords', headers=D_HEADERS, json={
+        "method": "suspend",
+        "params": {"SelectionCriteria": {"Ids": keyword_ids}}
     }, timeout=30)
     data = resp.json()
     if 'error' in data:
         return f"Ошибка API: {data['error']}"
-    results = data.get('result', {}).get('UpdateResults', [])
+    results = data.get('result', {}).get('SuspendResults', [])
     if not results:
         return f"Пустой ответ API. Полный ответ: {json.dumps(data, ensure_ascii=False)}"
     ok = sum(1 for r in results if not r.get('Errors'))
-    bad = [(r.get('Id'), r.get('Errors'), r.get('Warnings')) for r in results if r.get('Errors')]
+    bad = [(r.get('Id'), r.get('Errors')) for r in results if r.get('Errors')]
     if bad:
-        return f"Ошибки при обновлении групп: {json.dumps(bad, ensure_ascii=False)}"
-    return f"Автотаргетинг отключён в {ok} из {len(ad_group_ids)} группах."
+        return f"Ошибки: {json.dumps(bad, ensure_ascii=False)}"
+    return f"Автотаргетинг приостановлен в {ok} из {len(keyword_ids)} ключах."
 
 
 # ============================================================================
@@ -348,11 +345,11 @@ DEEPSEEK_TOOLS = [
         {"campaign_id": {"type": "integer", "description": "ID кампании (опционально)"}}),
 
     _fn("disable_autotargeting",
-        "Отключить автотаргетинг (---autotargeting) в группах объявлений. "
-        "Использовать вместо delete_keywords когда пользователь хочет удалить ---autotargeting. "
-        "Автотаргетинг — системный псевдо-ключ, его нельзя удалить через keywords.delete.",
-        {"ad_group_ids": {"type": "array", "items": {"type": "integer"}, "description": "Список ID групп объявлений"}},
-        required=["ad_group_ids"]),
+        "Приостановить автотаргетинг (---autotargeting). "
+        "Использовать вместо delete_keywords когда пользователь хочет отключить ---autotargeting. "
+        "Принимает ID самих псевдо-ключей ---autotargeting (не ID групп!) из get_keywords.",
+        {"keyword_ids": {"type": "array", "items": {"type": "integer"}, "description": "Список ID псевдо-ключей ---autotargeting из get_keywords"}},
+        required=["keyword_ids"]),
 ]
 
 TOOL_FUNCTIONS = {
@@ -360,7 +357,7 @@ TOOL_FUNCTIONS = {
     "get_keywords":       lambda i: tool_get_keywords(i.get("campaign_id")),
     "delete_keywords":    lambda i: tool_delete_keywords(i["keyword_ids"]),
     "add_keywords":       lambda i: tool_add_keywords(i["ad_group_id"], i["keywords"]),
-    "disable_autotargeting": lambda i: tool_disable_autotargeting(i["ad_group_ids"]),
+    "disable_autotargeting": lambda i: tool_disable_autotargeting(i["keyword_ids"]),
     "update_bid":         lambda i: tool_update_bid(i["campaign_id"], i["bid_rub"]),
     "update_budget":      lambda i: tool_update_budget(i["campaign_id"], i["budget_rub"]),
     "get_ad_groups":      lambda i: tool_get_ad_groups(i.get("campaign_id")),
@@ -382,7 +379,7 @@ SYSTEM_PROMPT = """Ты AI-ассистент для управления рек
 2. Перед изменением ставок/бюджетов — объясни причину, назови конкретные цифры, спроси подтверждение
 3. Если нет данных для анализа — сначала вызови get_campaign_stats
 4. Отвечай на русском. Будь конкретен: цифры, ID, названия кампаний.
-5. "---autotargeting" — это НЕ обычный ключ. Его нельзя удалить через delete_keywords. Для отключения автотаргетинга используй ТОЛЬКО disable_autotargeting с ID группы объявлений (не ID ключа). Если нужен ID группы — вызови get_keywords, поле AdGroupId.
+5. "---autotargeting" — это НЕ обычный ключ. Его нельзя удалить через delete_keywords. Для отключения используй ТОЛЬКО disable_autotargeting с ID самого псевдо-ключа (поле ID из get_keywords, не AdGroupId). Сначала вызови get_keywords, найди строки с "---autotargeting", возьми их ID.
 
 Ограничения:
 - Отвечай ТОЛЬКО на вопросы, связанные с Яндекс Директ, рекламными кампаниями, ключевыми словами, ставками и бюджетами этого бизнеса.
