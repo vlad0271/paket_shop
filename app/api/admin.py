@@ -278,12 +278,13 @@ def tool_disable_autotargeting(ad_group_ids: list) -> str:
     if 'error' in data:
         return f"Ошибка API: {data['error']}"
     results = data.get('result', {}).get('UpdateResults', [])
+    if not results:
+        return f"Пустой ответ API. Полный ответ: {json.dumps(data, ensure_ascii=False)}"
     ok = sum(1 for r in results if not r.get('Errors'))
-    bad = [r.get('Errors') for r in results if r.get('Errors')]
-    msg = f"Автотаргетинг отключён в {ok} из {len(ad_group_ids)} группах."
+    bad = [(r.get('Id'), r.get('Errors'), r.get('Warnings')) for r in results if r.get('Errors')]
     if bad:
-        msg += f" Ошибки: {bad}"
-    return msg
+        return f"Ошибки при обновлении групп: {json.dumps(bad, ensure_ascii=False)}"
+    return f"Автотаргетинг отключён в {ok} из {len(ad_group_ids)} группах."
 
 
 # ============================================================================
