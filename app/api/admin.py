@@ -459,6 +459,77 @@ def tool_update_autotargeting_categories(ad_group_id: int, enabled_categories: l
     )
 
 
+def tool_get_campaign_settings(campaign_id: int = None) -> str:
+    """Возвращает текущие настройки кампаний: стратегию, ставку, бюджет, статус.
+    Если campaign_id не указан — показывает все три наши кампании.
+    """
+    ids = [campaign_id] if campaign_id else OUR_CAMPAIGN_IDS
+    resp = requests.post(f'{API_URL}/campaigns', headers=D_HEADERS, json={
+        "method": "get",
+        "params": {
+            "SelectionCriteria": {"Ids": ids},
+            "FieldNames": ["Id", "Name", "Status", "State"],
+            "TextCampaignFieldNames": ["BiddingStrategy"]
+        }
+    }, timeout=30)
+    data = resp.json()
+    if 'error' in data:
+        return f"Ошибка API: {data['error']}"
+    campaigns = data.get('result', {}).get('Campaigns', [])
+    if not campaigns:
+        return "Кампании не найдены."
+
+    lines = ["Текущие настройки кампаний:\n"]
+    for c in campaigns:
+        lines.append(f"[{c['Id']}] {c['Name']}  Статус: {c['Status']} / {c['State']}")
+        strategy = c.get('TextCampaign', {}).get('BiddingStrategy', {})
+        search = strategy.get('Search', {})
+        stype = search.get('BiddingStrategyType', '—')
+        if stype == 'AVERAGE_CPC':
+            avg = search.get('AverageCpc', {})
+            bid = avg.get('AverageCpc', 0) / 1_000_000
+            budget = avg.get('WeeklySpendLimit', 0) / 1_000_000
+            lines.append(f"  Стратегия: AVERAGE_CPC  Ставка: {bid:.2f}₽  Бюджет/нед: {budget:.0f}₽")
+        elif stype == 'HIGHEST_POSITION':
+            lines.append(f"  Стратегия: HIGHEST_POSITION (ручные ставки)  — ставки задаются на ключи")
+        else:
+            lines.append(f"  Стратегия: {stype}")
+    return "\n".join(lines)
+
+
+def tool_get_keyword_bids(campaign_id: int) -> str:
+    """Показывает текущие ставки по ключевым словам кампании.
+    Актуально для режима HIGHEST_POSITION — позволяет увидеть какие ставки выставлены на каждый ключ.
+    """
+    resp = requests.post(f'{API_URL}/keywords', headers=D_HEADERS, json={
+        "method": "get",
+        "params": {
+            "SelectionCriteria": {"CampaignIds": [campaign_id]},
+            "FieldNames": ["Id", "Keyword", "Bid", "ContextBid", "Status", "AdGroupId"],
+            "Page": {"Limit": 10000}
+        }
+    }, timeout=30)
+    data = resp.json()
+    if 'error' in data:
+        return f"Ошибка API: {data['error']}"
+    keywords = data.get('result', {}).get('Keywords', [])
+    if not keywords:
+        return "Ключевых слов не найдено."
+
+    cname = CAMPAIGN_NAMES.get(campaign_id, campaign_id)
+    lines = [f"Ставки ключей [{cname}] ({len(keywords)} шт.):\n"]
+    for kw in keywords:
+        bid = (kw.get('Bid') or 0) / 1_000_000
+        ctx = (kw.get('ContextBid') or 0) / 1_000_000
+        bid_str = f"{bid:.2f}₽" if bid else "не задана"
+        ctx_str = f"{ctx:.2f}₽" if ctx else "—"
+        lines.append(
+            f"  ID:{kw['Id']}  \"{kw['Keyword']}\"  "
+            f"Поиск:{bid_str}  РСЯ:{ctx_str}  [{kw['Status']}]"
+        )
+    return "\n".join(lines)
+
+
 def tool_update_keyword_bids(campaign_id: int, bid_rub: float, keyword_ids: list = None) -> str:
     """Устанавливает ставки на ключевые слова в режиме HIGHEST_POSITION (ручные ставки).
     Если keyword_ids не указан — выставляет ставку всем ключам кампании.
@@ -904,6 +975,17 @@ DEEPSEEK_TOOLS = [
         },
         required=["ad_group_id", "enabled_categories"]),
 
+    _fn("get_campaign_settings",
+        "Показать текущие настройки кампаний: стратегию, ставку CPC, недельный бюджет, статус. "
+        "Вызывать ПЕРВЫМ когда нужно понять в каком режиме работает кампания перед изменением ставок.",
+        {"campaign_id": {"type": "integer", "description": "ID кампании (опционально). Без параметра — все три кампании."}}),
+
+    _fn("get_keyword_bids",
+        "Показать текущие ставки по всем ключевым словам кампании. "
+        "Использовать для кампаний с HIGHEST_POSITION чтобы увидеть какие ставки сейчас выставлены.",
+        {"campaign_id": {"type": "integer", "description": "ID кампании"}},
+        required=["campaign_id"]),
+
     _fn("update_keyword_bids",
         "Установить ставки на ключевые слова в режиме ручных ставок (HIGHEST_POSITION). "
         "Если keyword_ids не указан — выставляет ставку всем ключам кампании. "
@@ -964,6 +1046,8 @@ TOOL_FUNCTIONS = {
     "create_ad_group":    lambda i: tool_create_ad_group(i["campaign_id"], i["name"]),
     "archive_ad_group":   lambda i: tool_archive_ad_group(i["ad_group_id"]),
     "update_autotargeting_categories": lambda i: tool_update_autotargeting_categories(i["ad_group_id"], i.get("enabled_categories", [])),
+    "get_campaign_settings":           lambda i: tool_get_campaign_settings(i.get("campaign_id")),
+    "get_keyword_bids":                lambda i: tool_get_keyword_bids(i["campaign_id"]),
     "update_keyword_bids":             lambda i: tool_update_keyword_bids(i["campaign_id"], i["bid_rub"], i.get("keyword_ids")),
     "update_campaign_strategy":        lambda i: tool_update_campaign_strategy(i["campaign_id"], i["strategy"], i.get("bid_rub"), i.get("weekly_budget_rub")),
     "set_autotargeting_bid":           lambda i: tool_set_autotargeting_bid(i["campaign_id"], i.get("bid_rub", 0.3)),
@@ -985,38 +1069,35 @@ SYSTEM_PROMPT = """Ты AI-ассистент для управления рек
 - 708112806 "B2B — Рестораны": пакеты для ресторанов и кафе
 - 708112808 "B2B — Брендированные пакеты": кастомные пакеты с логотипом
 
-Текущая стратегия: AVERAGE_CPC, ~1500 руб/нед на каждую, ставки ~30–33 руб.
-
 Стратегии кампании и управление ставками:
 
-AVERAGE_CPC (текущая стратегия):
+ПРЕЖДЕ ЧЕМ МЕНЯТЬ СТАВКИ — вызови get_campaign_settings чтобы узнать текущую стратегию каждой кампании. Не угадывай — смотри факты.
+
+AVERAGE_CPC:
 - Ставка кампании → update_bid (меняет AverageCpc)
 - Бюджет → update_budget
-- Ставки отдельных ключей в этом режиме НЕ управляются — только средняя по кампании.
+- Ставки отдельных ключей в этом режиме НЕ управляются.
 
 HIGHEST_POSITION (ручные ставки):
-- Ставка кампании — не применима. Ставки задаются на каждый ключ отдельно.
-- Ставки ключей → update_keyword_bids (можно всем сразу или по ID)
+- Ставки ключей → update_keyword_bids (всем сразу или по ID). Посмотреть текущие ставки → get_keyword_bids.
 - Ставка автотаргетинга → set_autotargeting_bid
-- Смена стратегии → update_campaign_strategy(strategy="HIGHEST_POSITION")
+- update_bid и update_budget в этом режиме НЕ применимы.
 
-ВАЖНОЕ ПРАВИЛО: Если пользователь хочет выставить ставку на конкретный ключ или изменить ставки в режиме ручного управления — сначала убедись что стратегия HIGHEST_POSITION. Если текущая стратегия AVERAGE_CPC — сначала вызови update_campaign_strategy(HIGHEST_POSITION), затем update_keyword_bids. Предупреди пользователя что стратегия изменится и спроси подтверждение.
-
-Смена стратегии → update_campaign_strategy.
+СМЕНА СТРАТЕГИИ: update_campaign_strategy. Если пользователь хочет ставки на ключи, а стратегия AVERAGE_CPC — сначала переключи через update_campaign_strategy, затем update_keyword_bids. Предупреди и спроси подтверждение.
 
 Правила работы:
-1. Перед удалением ключей — покажи список и явно спроси подтверждение
-2. Перед изменением ставок/бюджетов/стратегий — объясни причину, назови конкретные цифры, спроси подтверждение
-3. Если нет данных для анализа — сначала вызови get_campaign_stats
+1. Перед удалением ключей — покажи список и явно спроси подтверждение.
+2. Перед любым изменением (ставка, бюджет, стратегия, ключи) — назови конкретные цифры и спроси подтверждение.
+3. Если нет данных — сначала запроси их инструментом (get_campaign_stats, get_campaign_settings, get_keyword_bids). Не угадывай и не предполагай.
 4. Отвечай на русском. Будь конкретен: цифры, ID, названия кампаний.
-5. Автотаргетинг (---autotargeting) — важные правила:
+5. ЧЕСТНОСТЬ: Если не знаешь ответа на вопрос — прямо скажи "не знаю" или "нужно проверить через API". Здесь управляют реальными деньгами. Любая ошибочная информация или догадка недопустима.
+6. Автотаргетинг (---autotargeting) — важные правила:
    - С 2024г. полностью ОТКЛЮЧИТЬ автотаргетинг невозможно ни через API, ни через веб-интерфейс. Он принудительно встроен в Яндекс Директ.
    - Категории автотаргетинга на Поиске: EXACT (целевые), NARROW (узкие), BROAD (широкие), ALTERNATIVE (альтернативные), COMPETITOR_BRAND (бренды конкурентов), OWN_BRAND (ваш бренд), NO_BRAND (без бренда).
-   - Метод 1 — снизить охват (update_autotargeting_categories): оставить только EXACT и NARROW, отключить остальные категории. Вызывать для каждой группы отдельно (нужен ad_group_id из get_ad_groups). Стратегию и ставки НЕ меняет.
-   - Метод 2 — заглушить ставкой (set_autotargeting_bid): выставить 0.3₽ ТОЛЬКО на автотаргетинг, ставки ключевых слов и стратегию кампании НЕ меняет. Это предпочтительный метод при жалобе на мусорный трафик.
-   - Метод 3 — кардинальный сброс (switch_to_manual_bids): переключить всю кампанию на ручные ставки и выставить 0.3₽ ВСЕМ ключам. Использовать только если методы 1 и 2 не помогли.
-   - Если пользователь жалуется на мусорный трафик от автотаргетинга — предложи сначала Метод 2 (set_autotargeting_bid), как самый безопасный и точечный.
-6. После каждого значимого действия (изменение ставки, бюджета, ключей, важное наблюдение) — вызывай save_memory чтобы сохранить факт для следующих сессий. Память уже загружена в контекст автоматически.
+   - Метод 1 — снизить охват (update_autotargeting_categories): оставить только EXACT и NARROW, отключить остальные. Вызывать для каждой группы отдельно (нужен ad_group_id из get_ad_groups).
+   - Метод 2 — заглушить ставкой (set_autotargeting_bid): выставить 0.3₽ ТОЛЬКО на автотаргетинг, ключи и стратегию НЕ трогает. Предпочтительный метод.
+   - Метод 3 — кардинальный (switch_to_manual_bids): ручные ставки + 0.3₽ ВСЕМ ключам. Только если методы 1 и 2 не помогли.
+7. После каждого значимого действия — вызывай save_memory. Память загружена в контекст автоматически.
 
 Ограничения:
 - Отвечай ТОЛЬКО на вопросы, связанные с Яндекс Директ, рекламными кампаниями, ключевыми словами, ставками и бюджетами этого бизнеса.
