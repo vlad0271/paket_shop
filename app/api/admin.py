@@ -538,7 +538,7 @@ def tool_update_keyword_bids(campaign_id: int, bid_rub: float, keyword_ids: list
     """
     bid_micro = int(max(bid_rub, 0.3) * 1_000_000)
 
-    # Если ID не переданы — получить все ключи кампании
+    # Если ID не переданы — получить все обычные ключи кампании (не автотаргетинг)
     if not keyword_ids:
         resp = requests.post(f'{API_URL}/keywords', headers=D_HEADERS, json={
             "method": "get",
@@ -554,23 +554,24 @@ def tool_update_keyword_bids(campaign_id: int, bid_rub: float, keyword_ids: list
         keywords = data.get('result', {}).get('Keywords', [])
         if not keywords:
             return "Ключевых слов не найдено."
-        keyword_ids = [kw['Id'] for kw in keywords]
-        kw_labels = {kw['Id']: kw['Keyword'] for kw in keywords}
-    else:
-        kw_labels = {kid: str(kid) for kid in keyword_ids}
+        # Исключаем автотаргетинг — у него нет поля Keyword
+        regular = [kw for kw in keywords if kw.get('Keyword')]
+        if not regular:
+            return "Обычных ключевых слов не найдено (только автотаргетинг — используй set_autotargeting_bid)."
+        keyword_ids = [kw['Id'] for kw in regular]
 
-    # Обновить ставки
-    resp2 = requests.post(f'{API_URL}/keywords', headers=D_HEADERS, json={
-        "method": "update",
-        "params": {"Keywords": [
-            {"Id": kid, "Bid": bid_micro, "ContextBid": bid_micro}
+    # Ставки выставляются через /bids, НЕ через keywords.update
+    resp2 = requests.post(f'{API_URL}/bids', headers=D_HEADERS, json={
+        "method": "set",
+        "params": {"Bids": [
+            {"KeywordId": kid, "Bid": bid_micro, "ContextBid": bid_micro}
             for kid in keyword_ids
         ]}
     }, timeout=15)
     data2 = resp2.json()
     if 'error' in data2:
-        return f"Ошибка keywords.update: {data2['error']}"
-    results = data2.get('result', {}).get('UpdateResults', [])
+        return f"Ошибка bids.set: {data2['error']}"
+    results = data2.get('result', {}).get('SetResults', [])
     ok = sum(1 for r in results if not r.get('Errors'))
     bad = [(keyword_ids[i], r.get('Errors')) for i, r in enumerate(results) if r.get('Errors')]
 
@@ -637,60 +638,63 @@ def tool_update_campaign_strategy(campaign_id: int, strategy: str,
 
 
 def tool_set_autotargeting_bid(campaign_id: int, bid_rub: float = 0.3) -> str:
-    """Выставляет ставку ТОЛЬКО на ---autotargeting записи в кампании.
+    """Выставляет ставку ТОЛЬКО на автотаргетинг в кампании.
     Стратегию и ставки обычных ключей НЕ меняет.
-    Метод: keywords.get → фильтр по Keyword==None (автотаргетинг) → keywords.update.
+    Метод: /bids.get по кампании → фильтр AutotargetingId → /bids.set.
     """
     bid_rub = max(bid_rub, 0.3)
     bid_micro = int(bid_rub * 1_000_000)
 
-    # Шаг 1: получить все ключи включая autotargeting
-    resp = requests.post(f'{API_URL}/keywords', headers=D_HEADERS, json={
+    # Шаг 1: получить все ставки кампании через /bids.get
+    resp = requests.post(f'{API_URL}/bids', headers=D_HEADERS, json={
         "method": "get",
         "params": {
             "SelectionCriteria": {"CampaignIds": [campaign_id]},
-            "FieldNames": ["Id", "Keyword", "Bid", "ContextBid", "Status"],
+            "FieldNames": ["KeywordId", "AutotargetingId", "Bid", "ContextBid", "AdGroupId"],
             "Page": {"Limit": 10000}
         }
     }, timeout=15)
     data = resp.json()
     if 'error' in data:
-        return f"Ошибка keywords.get: {data['error']}"
-    keywords = data.get('result', {}).get('Keywords', [])
-    if not keywords:
-        return "Ключей не найдено."
+        return f"Ошибка bids.get: {data['error']}\nПолный ответ: {json.dumps(data, ensure_ascii=False)[:400]}"
 
-    # autotargeting — записи где Keyword отсутствует или пустой
-    at_entries = [kw for kw in keywords if not kw.get('Keyword')]
-    if not at_entries:
+    bids = data.get('result', {}).get('Bids', [])
+    if not bids:
+        return f"bids.get вернул пустой список.\nПолный ответ: {json.dumps(data, ensure_ascii=False)[:400]}"
+
+    # Автотаргетинг — записи с AutotargetingId (у обычных ключей только KeywordId)
+    at_bids = [b for b in bids if b.get('AutotargetingId')]
+    regular_count = len([b for b in bids if b.get('KeywordId')])
+
+    if not at_bids:
         return (
-            f"Записи ---autotargeting не найдены среди {len(keywords)} ключей.\n"
-            f"Попробуй get_keyword_bids чтобы увидеть полный список."
+            f"Автотаргетинг не найден в bids.get. Всего записей: {len(bids)} (обычных ключей: {regular_count}).\n"
+            f"Первые записи: {json.dumps(bids[:3], ensure_ascii=False)}"
         )
 
-    at_ids = [kw['Id'] for kw in at_entries]
+    at_ids = [b['AutotargetingId'] for b in at_bids]
 
-    # Шаг 2: обновить ставки
-    resp2 = requests.post(f'{API_URL}/keywords', headers=D_HEADERS, json={
-        "method": "update",
-        "params": {"Keywords": [
-            {"Id": kid, "Bid": bid_micro, "ContextBid": bid_micro}
-            for kid in at_ids
+    # Шаг 2: выставить ставку через /bids.set с AutotargetingId
+    resp2 = requests.post(f'{API_URL}/bids', headers=D_HEADERS, json={
+        "method": "set",
+        "params": {"Bids": [
+            {"AutotargetingId": at_id, "Bid": bid_micro, "ContextBid": bid_micro}
+            for at_id in at_ids
         ]}
     }, timeout=15)
     data2 = resp2.json()
     if 'error' in data2:
-        return f"Ошибка keywords.update: {data2['error']}"
+        return f"Ошибка bids.set: {data2['error']}\nAutotargetingIds: {at_ids}"
 
-    results = data2.get('result', {}).get('UpdateResults', [])
+    results = data2.get('result', {}).get('SetResults', [])
     ok = sum(1 for r in results if not r.get('Errors'))
     bad = [r.get('Errors') for r in results if r.get('Errors')]
 
     cname = CAMPAIGN_NAMES.get(campaign_id, campaign_id)
     msg = (
         f"[{cname}] Ставка ---autotargeting → {bid_rub}₽\n"
-        f"  Обновлено: {ok} из {len(at_ids)}. IDs: {at_ids}\n"
-        f"  Ключевые слова и стратегия НЕ изменены."
+        f"  AutotargetingIds: {at_ids}\n"
+        f"  Обновлено: {ok} из {len(at_ids)}. Ключевые слова НЕ изменены."
     )
     if bad:
         msg += f"\n  Ошибки: {bad[0]}"
@@ -740,16 +744,16 @@ def tool_switch_to_manual_bids(campaign_id: int, bid_rub: float = 0.3) -> str:
         cname = CAMPAIGN_NAMES.get(campaign_id, campaign_id)
         return f"Кампания [{cname}] переключена на ручные ставки. Ключевых слов не найдено — ставки не обновлены."
 
-    # Шаг 3: выставить всем ключам ставку bid_rub
-    kw_updates = [{"Id": kw["Id"], "Bid": bid_micro, "ContextBid": bid_micro} for kw in keywords]
-    resp3 = requests.post(f'{API_URL}/keywords', headers=D_HEADERS, json={
-        "method": "update",
-        "params": {"Keywords": kw_updates}
+    # Шаг 3: выставить всем ключам ставку через /bids.set (НЕ keywords.update — там нет поля Bid)
+    bid_objects = [{"KeywordId": kw["Id"], "Bid": bid_micro, "ContextBid": bid_micro} for kw in keywords]
+    resp3 = requests.post(f'{API_URL}/bids', headers=D_HEADERS, json={
+        "method": "set",
+        "params": {"Bids": bid_objects}
     }, timeout=15)
     data3 = resp3.json()
     if 'error' in data3:
-        return f"Стратегия переключена. Ошибка обновления ставок ключей: {data3['error']}"
-    results3 = data3.get('result', {}).get('UpdateResults', [])
+        return f"Стратегия переключена. Ошибка bids.set: {data3['error']}"
+    results3 = data3.get('result', {}).get('SetResults', [])
     ok = sum(1 for r in results3 if not r.get('Errors'))
     bad = [r.get('Errors') for r in results3 if r.get('Errors')]
 
