@@ -637,68 +637,6 @@ def tool_update_campaign_strategy(campaign_id: int, strategy: str,
         )
 
 
-def tool_set_autotargeting_bid(campaign_id: int, bid_rub: float = 0.3) -> str:
-    """Выставляет ставку ТОЛЬКО на автотаргетинг в кампании.
-    Стратегию и ставки обычных ключей НЕ меняет.
-    Метод: /bids.get по кампании → фильтр AutotargetingId → /bids.set.
-    """
-    bid_rub = max(bid_rub, 0.3)
-    bid_micro = int(bid_rub * 1_000_000)
-
-    # Шаг 1: получить все ставки кампании через /bids.get
-    resp = requests.post(f'{API_URL}/bids', headers=D_HEADERS, json={
-        "method": "get",
-        "params": {
-            "SelectionCriteria": {"CampaignIds": [campaign_id]},
-            "FieldNames": ["KeywordId", "AutotargetingId", "Bid", "ContextBid", "AdGroupId"],
-            "Page": {"Limit": 10000}
-        }
-    }, timeout=15)
-    data = resp.json()
-    if 'error' in data:
-        return f"Ошибка bids.get: {data['error']}\nПолный ответ: {json.dumps(data, ensure_ascii=False)[:400]}"
-
-    bids = data.get('result', {}).get('Bids', [])
-    if not bids:
-        return f"bids.get вернул пустой список.\nПолный ответ: {json.dumps(data, ensure_ascii=False)[:400]}"
-
-    # Автотаргетинг — записи с AutotargetingId (у обычных ключей только KeywordId)
-    at_bids = [b for b in bids if b.get('AutotargetingId')]
-    regular_count = len([b for b in bids if b.get('KeywordId')])
-
-    if not at_bids:
-        return (
-            f"Автотаргетинг не найден в bids.get. Всего записей: {len(bids)} (обычных ключей: {regular_count}).\n"
-            f"Первые записи: {json.dumps(bids[:3], ensure_ascii=False)}"
-        )
-
-    at_ids = [b['AutotargetingId'] for b in at_bids]
-
-    # Шаг 2: выставить ставку через /bids.set с AutotargetingId
-    resp2 = requests.post(f'{API_URL}/bids', headers=D_HEADERS, json={
-        "method": "set",
-        "params": {"Bids": [
-            {"AutotargetingId": at_id, "Bid": bid_micro, "ContextBid": bid_micro}
-            for at_id in at_ids
-        ]}
-    }, timeout=15)
-    data2 = resp2.json()
-    if 'error' in data2:
-        return f"Ошибка bids.set: {data2['error']}\nAutotargetingIds: {at_ids}"
-
-    results = data2.get('result', {}).get('SetResults', [])
-    ok = sum(1 for r in results if not r.get('Errors'))
-    bad = [r.get('Errors') for r in results if r.get('Errors')]
-
-    cname = CAMPAIGN_NAMES.get(campaign_id, campaign_id)
-    msg = (
-        f"[{cname}] Ставка ---autotargeting → {bid_rub}₽\n"
-        f"  AutotargetingIds: {at_ids}\n"
-        f"  Обновлено: {ok} из {len(at_ids)}. Ключевые слова НЕ изменены."
-    )
-    if bad:
-        msg += f"\n  Ошибки: {bad[0]}"
-    return msg
 
 
 def tool_switch_to_manual_bids(campaign_id: int, bid_rub: float = 0.3) -> str:
@@ -993,17 +931,6 @@ DEEPSEEK_TOOLS = [
         },
         required=["campaign_id", "strategy"]),
 
-    _fn("set_autotargeting_bid",
-        "Выставить ставку 0.3₽ ТОЛЬКО на автотаргетинг в кампании. "
-        "Стратегию кампании и ставки ключевых слов НЕ меняет. "
-        "Использовать когда автотаргетинг жрёт бюджет — при ставке 0.3₽ он перестаёт показываться. "
-        "Только после явного подтверждения пользователя.",
-        {
-            "campaign_id": {"type": "integer", "description": "ID кампании"},
-            "bid_rub": {"type": "number", "description": "Ставка в рублях (минимум 0.3, по умолчанию 0.3)"},
-        },
-        required=["campaign_id"]),
-
     _fn("switch_to_manual_bids",
         "Переключить кампанию на стратегию 'Ручные ставки' (HIGHEST_POSITION) и выставить "
         "всем ключевым словам (включая автотаргетинг) минимальную ставку 0.3₽. "
@@ -1030,7 +957,6 @@ TOOL_FUNCTIONS = {
     "get_keyword_bids":                lambda i: tool_get_keyword_bids(i["campaign_id"]),
     "update_keyword_bids":             lambda i: tool_update_keyword_bids(i["campaign_id"], i["bid_rub"], i.get("keyword_ids")),
     "update_campaign_strategy":        lambda i: tool_update_campaign_strategy(i["campaign_id"], i["strategy"], i.get("bid_rub"), i.get("weekly_budget_rub")),
-    "set_autotargeting_bid":           lambda i: tool_set_autotargeting_bid(i["campaign_id"], i.get("bid_rub", 0.3)),
     "switch_to_manual_bids":           lambda i: tool_switch_to_manual_bids(i["campaign_id"], i.get("bid_rub", 0.3)),
     "get_keyword_stats":  lambda i: tool_get_keyword_stats(i.get("days", 7)),
     "save_memory":        lambda i: tool_save_memory(i["key"], i["value"]),
@@ -1059,8 +985,8 @@ AVERAGE_CPC:
 - Ставки отдельных ключей в этом режиме НЕ управляются.
 
 HIGHEST_POSITION (ручные ставки):
-- Ставки ключей → update_keyword_bids (всем сразу или по ID). Посмотреть текущие ставки → get_keyword_bids.
-- Ставка автотаргетинга → set_autotargeting_bid
+- Ставки ключей → update_keyword_bids (всем сразу или по конкретным ID). Посмотреть текущие ставки → get_keyword_bids.
+- Ставка автотаргетинга — через тот же update_keyword_bids с его ID. ID автотаргетинга виден в get_keyword_bids (строка ---autotargeting).
 - update_bid и update_budget в этом режиме НЕ применимы.
 
 СМЕНА СТРАТЕГИИ: update_campaign_strategy. Если пользователь хочет ставки на ключи, а стратегия AVERAGE_CPC — сначала переключи через update_campaign_strategy, затем update_keyword_bids. Предупреди и спроси подтверждение.
@@ -1075,7 +1001,7 @@ HIGHEST_POSITION (ручные ставки):
    - С 2024г. полностью ОТКЛЮЧИТЬ автотаргетинг невозможно ни через API, ни через веб-интерфейс. Он принудительно встроен в Яндекс Директ.
    - Категории автотаргетинга на Поиске: EXACT (целевые), NARROW (узкие), BROAD (широкие), ALTERNATIVE (альтернативные), COMPETITOR_BRAND (бренды конкурентов), OWN_BRAND (ваш бренд), NO_BRAND (без бренда).
    - Метод 1 — снизить охват (update_autotargeting_categories): оставить только EXACT и NARROW, отключить остальные. Вызывать для каждой группы отдельно (нужен ad_group_id из get_ad_groups).
-   - Метод 2 — заглушить ставкой (set_autotargeting_bid): выставить 0.3₽ ТОЛЬКО на автотаргетинг, ключи и стратегию НЕ трогает. Предпочтительный метод.
+   - Метод 2 — заглушить ставкой: переключить на HIGHEST_POSITION → get_keyword_bids → найти ID автотаргетинга → update_keyword_bids с этим ID и ставкой 0.3₽. Ставки обычных ключей НЕ трогать.
    - Метод 3 — кардинальный (switch_to_manual_bids): ручные ставки + 0.3₽ ВСЕМ ключам. Только если методы 1 и 2 не помогли.
 7. После каждого значимого действия — вызывай save_memory. Память загружена в контекст автоматически.
 
