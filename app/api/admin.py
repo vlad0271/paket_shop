@@ -459,6 +459,56 @@ def tool_update_autotargeting_categories(ad_group_id: int, enabled_categories: l
     )
 
 
+def tool_update_keyword_bids(campaign_id: int, bid_rub: float, keyword_ids: list = None) -> str:
+    """Устанавливает ставки на ключевые слова в режиме HIGHEST_POSITION (ручные ставки).
+    Если keyword_ids не указан — выставляет ставку всем ключам кампании.
+    НЕ работает в режиме AVERAGE_CPC — там ставки управляются через update_bid.
+    """
+    bid_micro = int(max(bid_rub, 0.3) * 1_000_000)
+
+    # Если ID не переданы — получить все ключи кампании
+    if not keyword_ids:
+        resp = requests.post(f'{API_URL}/keywords', headers=D_HEADERS, json={
+            "method": "get",
+            "params": {
+                "SelectionCriteria": {"CampaignIds": [campaign_id]},
+                "FieldNames": ["Id", "Keyword"],
+                "Page": {"Limit": 10000}
+            }
+        }, timeout=30)
+        data = resp.json()
+        if 'error' in data:
+            return f"Ошибка получения ключей: {data['error']}"
+        keywords = data.get('result', {}).get('Keywords', [])
+        if not keywords:
+            return "Ключевых слов не найдено."
+        keyword_ids = [kw['Id'] for kw in keywords]
+        kw_labels = {kw['Id']: kw['Keyword'] for kw in keywords}
+    else:
+        kw_labels = {kid: str(kid) for kid in keyword_ids}
+
+    # Обновить ставки
+    resp2 = requests.post(f'{API_URL}/keywords', headers=D_HEADERS, json={
+        "method": "update",
+        "params": {"Keywords": [
+            {"Id": kid, "Bid": bid_micro, "ContextBid": bid_micro}
+            for kid in keyword_ids
+        ]}
+    }, timeout=30)
+    data2 = resp2.json()
+    if 'error' in data2:
+        return f"Ошибка keywords.update: {data2['error']}"
+    results = data2.get('result', {}).get('UpdateResults', [])
+    ok = sum(1 for r in results if not r.get('Errors'))
+    bad = [(keyword_ids[i], r.get('Errors')) for i, r in enumerate(results) if r.get('Errors')]
+
+    cname = CAMPAIGN_NAMES.get(campaign_id, campaign_id)
+    msg = f"Ставки ключей [{cname}]: {bid_rub}₽ — обновлено {ok} из {len(keyword_ids)}."
+    if bad:
+        msg += f"\n  Ошибки у {len(bad)} ключей: {bad[0]}"
+    return msg
+
+
 def tool_update_campaign_strategy(campaign_id: int, strategy: str,
                                   bid_rub: float = None, weekly_budget_rub: float = None) -> str:
     """Меняет стратегию кампании.
@@ -504,8 +554,8 @@ def tool_update_campaign_strategy(campaign_id: int, strategy: str,
     if strategy == "HIGHEST_POSITION":
         return (
             f"Кампания [{cname}] переведена на ручные ставки (HIGHEST_POSITION).\n"
-            f"  Ставки на ключи нужно задать отдельно через add_keywords или update_bid.\n"
-            f"  Ставку на автотаргетинг — через set_autotargeting_bid."
+            f"  Ставки на ключи — update_keyword_bids (всем сразу или по ID).\n"
+            f"  Ставку на автотаргетинг — set_autotargeting_bid."
         )
     else:
         return (
@@ -854,6 +904,19 @@ DEEPSEEK_TOOLS = [
         },
         required=["ad_group_id", "enabled_categories"]),
 
+    _fn("update_keyword_bids",
+        "Установить ставки на ключевые слова в режиме ручных ставок (HIGHEST_POSITION). "
+        "Если keyword_ids не указан — выставляет ставку всем ключам кампании. "
+        "ВАЖНО: работает только после переключения стратегии на HIGHEST_POSITION через update_campaign_strategy. "
+        "В режиме AVERAGE_CPC для изменения ставки используй update_bid.",
+        {
+            "campaign_id": {"type": "integer", "description": "ID кампании"},
+            "bid_rub": {"type": "number", "description": "Ставка в рублях (минимум 0.3)"},
+            "keyword_ids": {"type": "array", "items": {"type": "integer"},
+                            "description": "Список ID ключей (опционально). Если не указан — обновятся все ключи кампании."},
+        },
+        required=["campaign_id", "bid_rub"]),
+
     _fn("update_campaign_strategy",
         "Изменить стратегию кампании. "
         "HIGHEST_POSITION — ручные ставки (ставки задаются на каждый ключ отдельно). "
@@ -901,6 +964,7 @@ TOOL_FUNCTIONS = {
     "create_ad_group":    lambda i: tool_create_ad_group(i["campaign_id"], i["name"]),
     "archive_ad_group":   lambda i: tool_archive_ad_group(i["ad_group_id"]),
     "update_autotargeting_categories": lambda i: tool_update_autotargeting_categories(i["ad_group_id"], i.get("enabled_categories", [])),
+    "update_keyword_bids":             lambda i: tool_update_keyword_bids(i["campaign_id"], i["bid_rub"], i.get("keyword_ids")),
     "update_campaign_strategy":        lambda i: tool_update_campaign_strategy(i["campaign_id"], i["strategy"], i.get("bid_rub"), i.get("weekly_budget_rub")),
     "set_autotargeting_bid":           lambda i: tool_set_autotargeting_bid(i["campaign_id"], i.get("bid_rub", 0.3)),
     "switch_to_manual_bids":           lambda i: tool_switch_to_manual_bids(i["campaign_id"], i.get("bid_rub", 0.3)),
@@ -923,10 +987,22 @@ SYSTEM_PROMPT = """Ты AI-ассистент для управления рек
 
 Текущая стратегия: AVERAGE_CPC, ~1500 руб/нед на каждую, ставки ~30–33 руб.
 
-Стратегии кампании:
-- AVERAGE_CPC (текущая) — средняя цена клика + недельный бюджет. Управление через update_bid / update_budget.
-- HIGHEST_POSITION — ручные ставки. Ставка задаётся на каждое ключевое слово отдельно. После переключения нужно задать ставки ключам и автотаргетингу.
-Смена стратегии — через update_campaign_strategy.
+Стратегии кампании и управление ставками:
+
+AVERAGE_CPC (текущая стратегия):
+- Ставка кампании → update_bid (меняет AverageCpc)
+- Бюджет → update_budget
+- Ставки отдельных ключей в этом режиме НЕ управляются — только средняя по кампании.
+
+HIGHEST_POSITION (ручные ставки):
+- Ставка кампании — не применима. Ставки задаются на каждый ключ отдельно.
+- Ставки ключей → update_keyword_bids (можно всем сразу или по ID)
+- Ставка автотаргетинга → set_autotargeting_bid
+- Смена стратегии → update_campaign_strategy(strategy="HIGHEST_POSITION")
+
+ВАЖНОЕ ПРАВИЛО: Если пользователь хочет выставить ставку на конкретный ключ или изменить ставки в режиме ручного управления — сначала убедись что стратегия HIGHEST_POSITION. Если текущая стратегия AVERAGE_CPC — сначала вызови update_campaign_strategy(HIGHEST_POSITION), затем update_keyword_bids. Предупреди пользователя что стратегия изменится и спроси подтверждение.
+
+Смена стратегии → update_campaign_strategy.
 
 Правила работы:
 1. Перед удалением ключей — покажи список и явно спроси подтверждение
