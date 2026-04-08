@@ -310,6 +310,71 @@ def tool_get_keyword_stats(days: int = 7) -> str:
     return "Отчёт не готов после 10 попыток."
 
 
+def tool_create_campaign(name: str, bid_rub: float = 30.0, weekly_budget_rub: float = 1500.0) -> str:
+    """Создаёт текстовую кампанию со стратегией AVERAGE_CPC."""
+    resp = requests.post(f'{API_URL}/campaigns', headers=D_HEADERS, json={
+        "method": "add",
+        "params": {
+            "Campaigns": [{
+                "Name": name,
+                "StartDate": datetime.now().strftime('%Y-%m-%d'),
+                "TextCampaign": {
+                    "BiddingStrategy": {
+                        "Search": {
+                            "BiddingStrategyType": "AVERAGE_CPC",
+                            "AverageCpc": {
+                                "AverageCpc": int(bid_rub * 1_000_000),
+                                "WeeklySpendLimit": int(weekly_budget_rub * 1_000_000)
+                            }
+                        },
+                        "Network": {"BiddingStrategyType": "SERVING_OFF"}
+                    }
+                }
+            }]
+        }
+    }, timeout=30)
+    data = resp.json()
+    if 'error' in data:
+        return f"Ошибка API: {data['error']}"
+    results = data.get('result', {}).get('AddResults', [])
+    if not results:
+        return f"Пустой ответ: {json.dumps(data, ensure_ascii=False)}"
+    errors = results[0].get('Errors')
+    if errors:
+        return f"Ошибка создания кампании: {errors}"
+    campaign_id = results[0].get('Id')
+    return f"Кампания создана. ID: {campaign_id}  Ставка: {bid_rub}₽  Бюджет: {weekly_budget_rub}₽/нед"
+
+
+def tool_create_ad(ad_group_id: int, title1: str, title2: str, text: str, href: str) -> str:
+    """Создаёт текстовое объявление в группе."""
+    resp = requests.post(f'{API_URL}/ads', headers=D_HEADERS, json={
+        "method": "add",
+        "params": {
+            "Ads": [{
+                "AdGroupId": ad_group_id,
+                "TextAd": {
+                    "Title": title1,
+                    "Title2": title2,
+                    "Text": text,
+                    "Href": href
+                }
+            }]
+        }
+    }, timeout=30)
+    data = resp.json()
+    if 'error' in data:
+        return f"Ошибка API: {data['error']}"
+    results = data.get('result', {}).get('AddResults', [])
+    if not results:
+        return f"Пустой ответ: {json.dumps(data, ensure_ascii=False)}"
+    errors = results[0].get('Errors')
+    if errors:
+        return f"Ошибка создания объявления: {errors}"
+    ad_id = results[0].get('Id')
+    return f"Объявление создано. ID: {ad_id}  Заголовок: {title1}"
+
+
 def tool_create_ad_group(campaign_id: int, name: str) -> str:
     """Создаёт группу объявлений с отключённым автотаргетингом."""
     resp = requests.post(f'{API_URL}/adgroups', headers=D_HEADERS, json={
@@ -318,8 +383,7 @@ def tool_create_ad_group(campaign_id: int, name: str) -> str:
             "AdGroups": [{
                 "CampaignId": campaign_id,
                 "Name": name,
-                "RegionIds": [1],
-                "TextAdGroup": {"AutotargetingEnabled": "NO"}
+                "RegionIds": [1]
             }]
         }
     }, timeout=30)
@@ -515,9 +579,29 @@ DEEPSEEK_TOOLS = [
         "Прочитать всю сохранённую память из прошлых сессий.",
         {}),
 
+    _fn("create_ad",
+        "Создать текстовое объявление в группе. Title1 до 35 символов, Title2 до 30, Text до 81 символа.",
+        {
+            "ad_group_id": {"type": "integer", "description": "ID группы объявлений"},
+            "title1": {"type": "string", "description": "Заголовок 1 (до 35 символов)"},
+            "title2": {"type": "string", "description": "Заголовок 2 (до 30 символов)"},
+            "text": {"type": "string", "description": "Текст объявления (до 81 символа)"},
+            "href": {"type": "string", "description": "Ссылка (обычно https://pakety.shop)"},
+        },
+        required=["ad_group_id", "title1", "title2", "text", "href"]),
+
+    _fn("create_campaign",
+        "Создать новую рекламную кампанию в Яндекс Директ со стратегией AVERAGE_CPC. "
+        "Только после явного подтверждения пользователя.",
+        {
+            "name": {"type": "string", "description": "Название кампании"},
+            "bid_rub": {"type": "number", "description": "Средняя ставка CPC в рублях (по умолчанию 30)"},
+            "weekly_budget_rub": {"type": "number", "description": "Недельный бюджет в рублях (по умолчанию 1500)"},
+        },
+        required=["name"]),
+
     _fn("create_ad_group",
-        "Создать новую группу объявлений с ОТКЛЮЧЁННЫМ автотаргетингом. "
-        "Использовать при пересоздании групп: создать новую → добавить ключи → заархивировать старую.",
+        "Создать новую группу объявлений в существующей кампании.",
         {
             "campaign_id": {"type": "integer", "description": "ID кампании"},
             "name": {"type": "string", "description": "Название новой группы"},
@@ -544,6 +628,8 @@ TOOL_FUNCTIONS = {
     "get_keywords":       lambda i: tool_get_keywords(i.get("campaign_id")),
     "delete_keywords":    lambda i: tool_delete_keywords(i["keyword_ids"]),
     "add_keywords":       lambda i: tool_add_keywords(i["ad_group_id"], i["keywords"]),
+    "create_ad":          lambda i: tool_create_ad(i["ad_group_id"], i["title1"], i["title2"], i["text"], i["href"]),
+    "create_campaign":    lambda i: tool_create_campaign(i["name"], i.get("bid_rub", 30.0), i.get("weekly_budget_rub", 1500.0)),
     "create_ad_group":    lambda i: tool_create_ad_group(i["campaign_id"], i["name"]),
     "archive_ad_group":   lambda i: tool_archive_ad_group(i["ad_group_id"]),
     "disable_autotargeting": lambda i: tool_disable_autotargeting(i["ad_group_ids"]),
@@ -571,7 +657,7 @@ SYSTEM_PROMPT = """Ты AI-ассистент для управления рек
 2. Перед изменением ставок/бюджетов — объясни причину, назови конкретные цифры, спроси подтверждение
 3. Если нет данных для анализа — сначала вызови get_campaign_stats
 4. Отвечай на русском. Будь конкретен: цифры, ID, названия кампаний.
-5. Для отключения автотаргетинга — пересоздай группу: (1) get_keywords → собери ключи кроме ---autotargeting, (2) create_ad_group(campaign_id, новое_имя) → получи новый ID, (3) add_keywords в новую группу, (4) archive_ad_group(старый_ID). Делай по одной кампании за раз, спрашивай подтверждение перед archive_ad_group.
+5. Автотаргетинг (---autotargeting) нельзя отключить через API — ограничение Яндекс Директ API v5. Яндекс добавляет его автоматически в каждую новую группу. Отключение ТОЛЬКО вручную через веб-интерфейс direct.yandex.ru при создании группы (снять галочку "Автотаргетинг"). Если пользователь просит создать кампанию с группой объявлений — ОБЯЗАТЕЛЬНО предупреди: "Кампанию создам через API, но группу объявлений нужно создать вручную в веб-интерфейсе direct.yandex.ru — там снимите галочку Автотаргетинг. Иначе Яндекс автоматически добавит мусорный трафик. После создания группы скажите мне её ID — добавлю ключи и объявления."
 6. После каждого значимого действия (изменение ставки, бюджета, ключей, важное наблюдение) — вызывай save_memory чтобы сохранить факт для следующих сессий. Память уже загружена в контекст автоматически.
 
 Ограничения:
