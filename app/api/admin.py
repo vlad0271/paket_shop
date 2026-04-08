@@ -422,27 +422,249 @@ def tool_archive_ad_group(ad_group_id: int) -> str:
     return f"Группа {ad_group_id} остановлена и заархивирована."
 
 
-def tool_disable_autotargeting(ad_group_ids: list) -> str:
-    """Отключает автотаргетинг через эндпоинт /autotargetings по ID групп объявлений.
-    ID групп берутся из get_keywords (поле AdGroupId у строки с ---autotargeting).
+def tool_update_autotargeting_categories(ad_group_id: int, enabled_categories: list) -> str:
+    """Управляет категориями автотаргетинга в группе объявлений через adgroups.update.
+    Категории: EXACT (целевые), NARROW (узкие), BROAD (широкие),
+    ALTERNATIVE (альтернативные), COMPETITOR_BRAND (бренды конкурентов),
+    OWN_BRAND (ваш бренд), NO_BRAND (без бренда).
+    enabled_categories — список категорий, которые ВКЛЮЧИТЬ. Остальные выключаются.
     """
-    resp = requests.post(f'{API_URL}/autotargetings', headers=D_HEADERS, json={
-        "method": "suspend",
-        "params": {"SelectionCriteria": {"AdGroupIds": ad_group_ids}}
+    ALL_CATEGORIES = ["EXACT", "NARROW", "BROAD", "ALTERNATIVE",
+                      "COMPETITOR_BRAND", "OWN_BRAND", "NO_BRAND"]
+    categories_payload = [
+        {"Category": cat, "Value": "YES" if cat in enabled_categories else "NO"}
+        for cat in ALL_CATEGORIES
+    ]
+    resp = requests.post(f'{API_URL}/adgroups', headers=D_HEADERS, json={
+        "method": "update",
+        "params": {
+            "AdGroups": [{
+                "Id": ad_group_id,
+                "AutotargetingCategories": categories_payload
+            }]
+        }
     }, timeout=30)
-    if not resp.text.strip():
-        return f"Пустой ответ, HTTP {resp.status_code}. Эндпоинт /autotargetings недоступен."
     data = resp.json()
     if 'error' in data:
         return f"Ошибка API: {data['error']}"
-    results = data.get('result', {}).get('SuspendResults', [])
-    if not results:
-        return f"Пустой ответ API. Полный ответ: {json.dumps(data, ensure_ascii=False)}"
-    ok = sum(1 for r in results if not r.get('Errors'))
-    bad = [(r.get('Id'), r.get('Errors')) for r in results if r.get('Errors')]
+    errs = data.get('result', {}).get('UpdateResults', [{}])[0].get('Errors', [])
+    if errs:
+        return f"Ошибка обновления категорий: {errs}"
+    enabled_str = ", ".join(enabled_categories) if enabled_categories else "НЕТ (все отключены)"
+    disabled = [c for c in ALL_CATEGORIES if c not in enabled_categories]
+    return (
+        f"Категории автотаргетинга группы {ad_group_id} обновлены.\n"
+        f"  Включены: {enabled_str}\n"
+        f"  Отключены: {', '.join(disabled) if disabled else 'нет'}"
+    )
+
+
+def tool_update_campaign_strategy(campaign_id: int, strategy: str,
+                                  bid_rub: float = None, weekly_budget_rub: float = None) -> str:
+    """Меняет стратегию кампании.
+    strategy: 'HIGHEST_POSITION' (ручные ставки) или 'AVERAGE_CPC' (средняя цена клика).
+    При AVERAGE_CPC bid_rub и weekly_budget_rub обязательны.
+    При HIGHEST_POSITION bid_rub и weekly_budget_rub игнорируются — ставки задаются на ключах отдельно.
+    """
+    strategy = strategy.upper()
+
+    if strategy == "HIGHEST_POSITION":
+        search_params = {"BiddingStrategyType": "HIGHEST_POSITION"}
+    elif strategy == "AVERAGE_CPC":
+        if not bid_rub or not weekly_budget_rub:
+            return "Для AVERAGE_CPC нужно указать bid_rub и weekly_budget_rub."
+        search_params = {
+            "BiddingStrategyType": "AVERAGE_CPC",
+            "AverageCpc": {
+                "AverageCpc": int(bid_rub * 1_000_000),
+                "WeeklySpendLimit": int(weekly_budget_rub * 1_000_000)
+            }
+        }
+    else:
+        return f"Неизвестная стратегия: {strategy}. Доступны: HIGHEST_POSITION, AVERAGE_CPC."
+
+    resp = requests.post(f'{API_URL}/campaigns', headers=D_HEADERS, json={
+        "method": "update",
+        "params": {"Campaigns": [{
+            "Id": campaign_id,
+            "TextCampaign": {"BiddingStrategy": {
+                "Search": search_params,
+                "Network": {"BiddingStrategyType": "SERVING_OFF"}
+            }}
+        }]}
+    }, timeout=30)
+    data = resp.json()
+    if 'error' in data:
+        return f"Ошибка API: {data['error']}"
+    errs = data.get('result', {}).get('UpdateResults', [{}])[0].get('Errors', [])
+    if errs:
+        return f"Ошибка обновления стратегии: {errs}"
+
+    cname = CAMPAIGN_NAMES.get(campaign_id, campaign_id)
+    if strategy == "HIGHEST_POSITION":
+        return (
+            f"Кампания [{cname}] переведена на ручные ставки (HIGHEST_POSITION).\n"
+            f"  Ставки на ключи нужно задать отдельно через add_keywords или update_bid.\n"
+            f"  Ставку на автотаргетинг — через set_autotargeting_bid."
+        )
+    else:
+        return (
+            f"Кампания [{cname}] переведена на AVERAGE_CPC.\n"
+            f"  Средняя ставка: {bid_rub}₽  Недельный бюджет: {weekly_budget_rub}₽"
+        )
+
+
+def tool_set_autotargeting_bid(campaign_id: int, bid_rub: float = 0.3) -> str:
+    """Выставляет ставку 0.3₽ ТОЛЬКО на автотаргетинг в кампании.
+    Стратегию кампании и ставки ключевых слов НЕ меняет.
+    Шаги: получить группы → получить автотаргетинги → выставить ставки через bids.set.
+    """
+    bid_rub = max(bid_rub, 0.3)
+    bid_micro = int(bid_rub * 1_000_000)
+
+    # Шаг 1: получить ID групп кампании
+    resp = requests.post(f'{API_URL}/adgroups', headers=D_HEADERS, json={
+        "method": "get",
+        "params": {
+            "SelectionCriteria": {"CampaignIds": [campaign_id]},
+            "FieldNames": ["Id", "Name"]
+        }
+    }, timeout=30)
+    data = resp.json()
+    if 'error' in data:
+        return f"Ошибка получения групп: {data['error']}"
+    groups = data.get('result', {}).get('AdGroups', [])
+    if not groups:
+        return f"Групп в кампании {campaign_id} не найдено."
+    group_ids = [g['Id'] for g in groups]
+
+    # Шаг 2: получить автотаргетинги по группам
+    resp2 = requests.post(f'{API_URL}/autotargetings', headers=D_HEADERS, json={
+        "method": "get",
+        "params": {
+            "SelectionCriteria": {"AdGroupIds": group_ids},
+            "FieldNames": ["Id", "AdGroupId", "CampaignId", "Bid", "ContextBid", "State"]
+        }
+    }, timeout=30)
+
+    # Диагностика если /autotargetings недоступен
+    if resp2.status_code != 200 or not resp2.text.strip():
+        return (
+            f"Эндпоинт /autotargetings вернул HTTP {resp2.status_code}.\n"
+            f"Ответ: {resp2.text[:300] if resp2.text else '(пустой)'}\n"
+            f"Групп найдено: {len(group_ids)} — {group_ids}"
+        )
+
+    data2 = resp2.json()
+    if 'error' in data2:
+        return (
+            f"Ошибка /autotargetings.get: {data2['error']}\n"
+            f"Групп найдено: {len(group_ids)} — {group_ids}"
+        )
+
+    autotargetings = data2.get('result', {}).get('Autotargetings', [])
+    if not autotargetings:
+        return (
+            f"Автотаргетинги не найдены через /autotargetings.get.\n"
+            f"Полный ответ API: {json.dumps(data2, ensure_ascii=False)[:500]}"
+        )
+
+    # Шаг 3: выставить ставки через bids.set
+    bid_objects = [
+        {"AutotargetingId": at['Id'], "Bid": bid_micro, "ContextBid": bid_micro}
+        for at in autotargetings
+    ]
+    resp3 = requests.post(f'{API_URL}/bids', headers=D_HEADERS, json={
+        "method": "set",
+        "params": {"Bids": bid_objects}
+    }, timeout=30)
+    data3 = resp3.json()
+    if 'error' in data3:
+        return (
+            f"Автотаргетинги найдены ({len(autotargetings)} шт.), но bids.set вернул ошибку:\n"
+            f"{data3['error']}\n"
+            f"IDs автотаргетингов: {[at['Id'] for at in autotargetings]}"
+        )
+
+    results3 = data3.get('result', {}).get('SetResults', [])
+    ok = sum(1 for r in results3 if not r.get('Errors'))
+    bad = [r.get('Errors') for r in results3 if r.get('Errors')]
+    cname = CAMPAIGN_NAMES.get(campaign_id, campaign_id)
+    msg = (
+        f"Ставка автотаргетинга [{cname}] → {bid_rub}₽\n"
+        f"  Обновлено: {ok} из {len(autotargetings)}\n"
+        f"  Ключевые слова и стратегия НЕ изменены."
+    )
     if bad:
-        return f"Ошибки: {json.dumps(bad, ensure_ascii=False)}"
-    return f"Автотаргетинг отключён в {ok} из {len(ad_group_ids)} группах."
+        msg += f"\n  Ошибки: {bad[0]}"
+    return msg
+
+
+def tool_switch_to_manual_bids(campaign_id: int, bid_rub: float = 0.3) -> str:
+    """Переключает кампанию на стратегию HIGHEST_POSITION (ручные ставки)
+    и выставляет всем ключевым словам минимальную ставку bid_rub рублей (мин. 0.3).
+    Фактически нейтрализует автотаргетинг — у него не будет бюджета на показы.
+    """
+    bid_rub = max(bid_rub, 0.3)  # минимум Яндекс Директ
+    bid_micro = int(bid_rub * 1_000_000)
+
+    # Шаг 1: переключить стратегию на HIGHEST_POSITION (ручные ставки)
+    resp = requests.post(f'{API_URL}/campaigns', headers=D_HEADERS, json={
+        "method": "update",
+        "params": {"Campaigns": [{
+            "Id": campaign_id,
+            "TextCampaign": {"BiddingStrategy": {
+                "Search": {"BiddingStrategyType": "HIGHEST_POSITION"},
+                "Network": {"BiddingStrategyType": "SERVING_OFF"}
+            }}
+        }]}
+    }, timeout=30)
+    data = resp.json()
+    if 'error' in data:
+        return f"Ошибка переключения стратегии: {data['error']}"
+    errs = data.get('result', {}).get('UpdateResults', [{}])[0].get('Errors', [])
+    if errs:
+        return f"Ошибка стратегии: {errs}"
+
+    # Шаг 2: получить все ключи кампании
+    resp2 = requests.post(f'{API_URL}/keywords', headers=D_HEADERS, json={
+        "method": "get",
+        "params": {
+            "SelectionCriteria": {"CampaignIds": [campaign_id]},
+            "FieldNames": ["Id", "Keyword", "Status"],
+            "Page": {"Limit": 10000}
+        }
+    }, timeout=30)
+    data2 = resp2.json()
+    if 'error' in data2:
+        return f"Стратегия переключена. Ошибка получения ключей: {data2['error']}"
+    keywords = data2.get('result', {}).get('Keywords', [])
+    if not keywords:
+        cname = CAMPAIGN_NAMES.get(campaign_id, campaign_id)
+        return f"Кампания [{cname}] переключена на ручные ставки. Ключевых слов не найдено — ставки не обновлены."
+
+    # Шаг 3: выставить всем ключам ставку bid_rub
+    kw_updates = [{"Id": kw["Id"], "Bid": bid_micro, "ContextBid": bid_micro} for kw in keywords]
+    resp3 = requests.post(f'{API_URL}/keywords', headers=D_HEADERS, json={
+        "method": "update",
+        "params": {"Keywords": kw_updates}
+    }, timeout=30)
+    data3 = resp3.json()
+    if 'error' in data3:
+        return f"Стратегия переключена. Ошибка обновления ставок ключей: {data3['error']}"
+    results3 = data3.get('result', {}).get('UpdateResults', [])
+    ok = sum(1 for r in results3 if not r.get('Errors'))
+    bad = [r.get('Errors') for r in results3 if r.get('Errors')]
+
+    cname = CAMPAIGN_NAMES.get(campaign_id, campaign_id)
+    msg = (
+        f"Кампания [{cname}] переключена на ручные ставки.\n"
+        f"  Ставка выставлена: {bid_rub}₽ ({ok} из {len(keywords)} ключей)\n"
+        f"  Автотаргетинг фактически нейтрализован — ставки ниже минимального порога показа."
+    )
+    if bad:
+        msg += f"\n  Ошибки у {len(bad)} ключей: {bad[0]}"
+    return msg
 
 
 # ============================================================================
@@ -615,12 +837,58 @@ DEEPSEEK_TOOLS = [
         {"ad_group_id": {"type": "integer", "description": "ID группы для архивирования"}},
         required=["ad_group_id"]),
 
-    _fn("disable_autotargeting",
-        "Отключить автотаргетинг (---autotargeting) через /autotargetings API. "
-        "Использовать вместо delete_keywords когда пользователь хочет отключить ---autotargeting. "
-        "Принимает AdGroupId групп (поле AdGroupId из get_keywords у строки с ---autotargeting).",
-        {"ad_group_ids": {"type": "array", "items": {"type": "integer"}, "description": "Список AdGroupId групп объявлений где есть ---autotargeting"}},
-        required=["ad_group_ids"]),
+    _fn("update_autotargeting_categories",
+        "Управлять категориями автотаргетинга в группе объявлений. "
+        "С 2024г. полностью отключить автотаргетинг невозможно, но можно снизить его влияние: "
+        "оставить только EXACT (целевые) и NARROW (узкие), отключить BROAD/ALTERNATIVE/COMPETITOR_BRAND/OWN_BRAND/NO_BRAND. "
+        "Категории: EXACT=целевые, NARROW=узкие, BROAD=широкие, ALTERNATIVE=альтернативные, "
+        "COMPETITOR_BRAND=бренды конкурентов, OWN_BRAND=ваш бренд, NO_BRAND=без бренда. "
+        "Только после явного подтверждения пользователя.",
+        {
+            "ad_group_id": {"type": "integer", "description": "ID группы объявлений"},
+            "enabled_categories": {
+                "type": "array",
+                "items": {"type": "string", "enum": ["EXACT", "NARROW", "BROAD", "ALTERNATIVE", "COMPETITOR_BRAND", "OWN_BRAND", "NO_BRAND"]},
+                "description": "Список категорий которые ОСТАВИТЬ включёнными. Остальные будут отключены."
+            }
+        },
+        required=["ad_group_id", "enabled_categories"]),
+
+    _fn("update_campaign_strategy",
+        "Изменить стратегию кампании. "
+        "HIGHEST_POSITION — ручные ставки (ставки задаются на каждый ключ отдельно). "
+        "AVERAGE_CPC — средняя цена клика с недельным бюджетом. "
+        "Только после явного подтверждения пользователя.",
+        {
+            "campaign_id": {"type": "integer", "description": "ID кампании"},
+            "strategy": {"type": "string", "enum": ["HIGHEST_POSITION", "AVERAGE_CPC"],
+                         "description": "HIGHEST_POSITION=ручные ставки, AVERAGE_CPC=средняя цена клика"},
+            "bid_rub": {"type": "number", "description": "Средняя ставка CPC в рублях (только для AVERAGE_CPC)"},
+            "weekly_budget_rub": {"type": "number", "description": "Недельный бюджет в рублях (только для AVERAGE_CPC)"},
+        },
+        required=["campaign_id", "strategy"]),
+
+    _fn("set_autotargeting_bid",
+        "Выставить ставку 0.3₽ ТОЛЬКО на автотаргетинг в кампании. "
+        "Стратегию кампании и ставки ключевых слов НЕ меняет. "
+        "Использовать когда автотаргетинг жрёт бюджет — при ставке 0.3₽ он перестаёт показываться. "
+        "Только после явного подтверждения пользователя.",
+        {
+            "campaign_id": {"type": "integer", "description": "ID кампании"},
+            "bid_rub": {"type": "number", "description": "Ставка в рублях (минимум 0.3, по умолчанию 0.3)"},
+        },
+        required=["campaign_id"]),
+
+    _fn("switch_to_manual_bids",
+        "Переключить кампанию на стратегию 'Ручные ставки' (HIGHEST_POSITION) и выставить "
+        "всем ключевым словам (включая автотаргетинг) минимальную ставку 0.3₽. "
+        "Кардинальный сброс всех ставок — используй только если set_autotargeting_bid не помог. "
+        "Только после явного подтверждения пользователя.",
+        {
+            "campaign_id": {"type": "integer", "description": "ID кампании"},
+            "bid_rub": {"type": "number", "description": "Ставка в рублях (минимум 0.3, по умолчанию 0.3)"},
+        },
+        required=["campaign_id"]),
 ]
 
 TOOL_FUNCTIONS = {
@@ -632,7 +900,10 @@ TOOL_FUNCTIONS = {
     "create_campaign":    lambda i: tool_create_campaign(i["name"], i.get("bid_rub", 30.0), i.get("weekly_budget_rub", 1500.0)),
     "create_ad_group":    lambda i: tool_create_ad_group(i["campaign_id"], i["name"]),
     "archive_ad_group":   lambda i: tool_archive_ad_group(i["ad_group_id"]),
-    "disable_autotargeting": lambda i: tool_disable_autotargeting(i["ad_group_ids"]),
+    "update_autotargeting_categories": lambda i: tool_update_autotargeting_categories(i["ad_group_id"], i.get("enabled_categories", [])),
+    "update_campaign_strategy":        lambda i: tool_update_campaign_strategy(i["campaign_id"], i["strategy"], i.get("bid_rub"), i.get("weekly_budget_rub")),
+    "set_autotargeting_bid":           lambda i: tool_set_autotargeting_bid(i["campaign_id"], i.get("bid_rub", 0.3)),
+    "switch_to_manual_bids":           lambda i: tool_switch_to_manual_bids(i["campaign_id"], i.get("bid_rub", 0.3)),
     "get_keyword_stats":  lambda i: tool_get_keyword_stats(i.get("days", 7)),
     "save_memory":        lambda i: tool_save_memory(i["key"], i["value"]),
     "read_memory":        lambda i: tool_read_memory(),
@@ -652,12 +923,23 @@ SYSTEM_PROMPT = """Ты AI-ассистент для управления рек
 
 Текущая стратегия: AVERAGE_CPC, ~1500 руб/нед на каждую, ставки ~30–33 руб.
 
+Стратегии кампании:
+- AVERAGE_CPC (текущая) — средняя цена клика + недельный бюджет. Управление через update_bid / update_budget.
+- HIGHEST_POSITION — ручные ставки. Ставка задаётся на каждое ключевое слово отдельно. После переключения нужно задать ставки ключам и автотаргетингу.
+Смена стратегии — через update_campaign_strategy.
+
 Правила работы:
 1. Перед удалением ключей — покажи список и явно спроси подтверждение
-2. Перед изменением ставок/бюджетов — объясни причину, назови конкретные цифры, спроси подтверждение
+2. Перед изменением ставок/бюджетов/стратегий — объясни причину, назови конкретные цифры, спроси подтверждение
 3. Если нет данных для анализа — сначала вызови get_campaign_stats
 4. Отвечай на русском. Будь конкретен: цифры, ID, названия кампаний.
-5. Автотаргетинг (---autotargeting) нельзя отключить через API — ограничение Яндекс Директ API v5. Яндекс добавляет его автоматически в каждую новую группу. Отключение ТОЛЬКО вручную через веб-интерфейс direct.yandex.ru при создании группы (снять галочку "Автотаргетинг"). Если пользователь просит создать кампанию с группой объявлений — ОБЯЗАТЕЛЬНО предупреди: "Кампанию создам через API, но группу объявлений нужно создать вручную в веб-интерфейсе direct.yandex.ru — там снимите галочку Автотаргетинг. Иначе Яндекс автоматически добавит мусорный трафик. После создания группы скажите мне её ID — добавлю ключи и объявления."
+5. Автотаргетинг (---autotargeting) — важные правила:
+   - С 2024г. полностью ОТКЛЮЧИТЬ автотаргетинг невозможно ни через API, ни через веб-интерфейс. Он принудительно встроен в Яндекс Директ.
+   - Категории автотаргетинга на Поиске: EXACT (целевые), NARROW (узкие), BROAD (широкие), ALTERNATIVE (альтернативные), COMPETITOR_BRAND (бренды конкурентов), OWN_BRAND (ваш бренд), NO_BRAND (без бренда).
+   - Метод 1 — снизить охват (update_autotargeting_categories): оставить только EXACT и NARROW, отключить остальные категории. Вызывать для каждой группы отдельно (нужен ad_group_id из get_ad_groups). Стратегию и ставки НЕ меняет.
+   - Метод 2 — заглушить ставкой (set_autotargeting_bid): выставить 0.3₽ ТОЛЬКО на автотаргетинг, ставки ключевых слов и стратегию кампании НЕ меняет. Это предпочтительный метод при жалобе на мусорный трафик.
+   - Метод 3 — кардинальный сброс (switch_to_manual_bids): переключить всю кампанию на ручные ставки и выставить 0.3₽ ВСЕМ ключам. Использовать только если методы 1 и 2 не помогли.
+   - Если пользователь жалуется на мусорный трафик от автотаргетинга — предложи сначала Метод 2 (set_autotargeting_bid), как самый безопасный и точечный.
 6. После каждого значимого действия (изменение ставки, бюджета, ключей, важное наблюдение) — вызывай save_memory чтобы сохранить факт для следующих сессий. Память уже загружена в контекст автоматически.
 
 Ограничения:
