@@ -669,56 +669,64 @@ def tool_set_autotargeting_bid(campaign_id: int, bid_rub: float = 0.3) -> str:
         }
     }, timeout=15)
 
-    # Диагностика если /autotargetings недоступен
+    step2_debug = (
+        f"\n[ШАГ 2] /autotargetings.get для групп {group_ids}\n"
+        f"  HTTP: {resp2.status_code}\n"
+        f"  Ответ: {resp2.text[:600] if resp2.text else '(пустой)'}"
+    )
+
     if resp2.status_code != 200 or not resp2.text.strip():
-        return (
-            f"Эндпоинт /autotargetings вернул HTTP {resp2.status_code}.\n"
-            f"Ответ: {resp2.text[:300] if resp2.text else '(пустой)'}\n"
-            f"Групп найдено: {len(group_ids)} — {group_ids}"
-        )
+        return f"Группы найдены: {group_ids}{step2_debug}\nЭндпоинт недоступен — остановка."
 
     data2 = resp2.json()
     if 'error' in data2:
-        return (
-            f"Ошибка /autotargetings.get: {data2['error']}\n"
-            f"Групп найдено: {len(group_ids)} — {group_ids}"
-        )
+        return f"Группы найдены: {group_ids}{step2_debug}\nОшибка API — остановка."
 
     autotargetings = data2.get('result', {}).get('Autotargetings', [])
     if not autotargetings:
-        return (
-            f"Автотаргетинги не найдены через /autotargetings.get.\n"
-            f"Полный ответ API: {json.dumps(data2, ensure_ascii=False)[:500]}"
-        )
+        return f"Группы найдены: {group_ids}{step2_debug}\nАвтотаргетинги не найдены — остановка."
 
-    # Шаг 3: выставить ставки через bids.set
+    at_ids = [at['Id'] for at in autotargetings]
+
+    # Шаг 3: выставить ставки через bids.set с полем KeywordId (autotargeting — особый тип критерия)
     bid_objects = [
-        {"AutotargetingId": at['Id'], "Bid": bid_micro, "ContextBid": bid_micro}
-        for at in autotargetings
+        {"KeywordId": at_id, "Bid": bid_micro, "ContextBid": bid_micro}
+        for at_id in at_ids
     ]
     resp3 = requests.post(f'{API_URL}/bids', headers=D_HEADERS, json={
         "method": "set",
         "params": {"Bids": bid_objects}
     }, timeout=15)
+
+    step3_debug = (
+        f"\n[ШАГ 3] /bids.set для автотаргетингов {at_ids}\n"
+        f"  HTTP: {resp3.status_code}\n"
+        f"  Ответ: {resp3.text[:600] if resp3.text else '(пустой)'}"
+    )
+
     data3 = resp3.json()
     if 'error' in data3:
-        return (
-            f"Автотаргетинги найдены ({len(autotargetings)} шт.), но bids.set вернул ошибку:\n"
-            f"{data3['error']}\n"
-            f"IDs автотаргетингов: {[at['Id'] for at in autotargetings]}"
-        )
+        return f"{step2_debug}{step3_debug}\nОшибка bids.set — остановка."
 
     results3 = data3.get('result', {}).get('SetResults', [])
     ok = sum(1 for r in results3 if not r.get('Errors'))
     bad = [r.get('Errors') for r in results3 if r.get('Errors')]
+
     cname = CAMPAIGN_NAMES.get(campaign_id, campaign_id)
+    if ok == 0 and not results3:
+        return (
+            f"ВНИМАНИЕ: bids.set вернул пустой SetResults — ставки не обновлены.\n"
+            f"{step2_debug}{step3_debug}"
+        )
+
     msg = (
-        f"Ставка автотаргетинга [{cname}] → {bid_rub}₽\n"
-        f"  Обновлено: {ok} из {len(autotargetings)}\n"
+        f"[{cname}] Ставка автотаргетинга → {bid_rub}₽\n"
+        f"  Обновлено: {ok} из {len(at_ids)}\n"
         f"  Ключевые слова и стратегия НЕ изменены."
     )
     if bad:
         msg += f"\n  Ошибки: {bad[0]}"
+    msg += step2_debug + step3_debug
     return msg
 
 
