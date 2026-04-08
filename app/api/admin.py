@@ -5,6 +5,7 @@
 Защищена токеном (ADMIN_TOKEN в env).
 """
 
+import asyncio
 import csv
 import io
 import json
@@ -77,7 +78,7 @@ def tool_get_campaign_stats(days: int = 7) -> str:
         }
     }
     for _ in range(10):
-        resp = requests.post(REPORTS_URL, headers=D_REPORT_HEADERS, json=body, timeout=60)
+        resp = requests.post(REPORTS_URL, headers=D_REPORT_HEADERS, json=body, timeout=45)
         if resp.status_code == 200:
             reader = csv.DictReader(io.StringIO(resp.text), delimiter='\t')
             rows = [r for r in reader if int(r['CampaignId']) in OUR_CAMPAIGN_IDS]
@@ -107,7 +108,7 @@ def tool_get_keywords(campaign_id: int = None) -> str:
             "FieldNames": ["Id", "Keyword", "Status", "AdGroupId", "CampaignId"],
             "Page": {"Limit": 10000}
         }
-    }, timeout=30)
+    }, timeout=15)
     data = resp.json()
     if 'error' in data:
         return f"Ошибка API: {data['error']}"
@@ -128,7 +129,7 @@ def tool_delete_keywords(keyword_ids: list) -> str:
     resp = requests.post(f'{API_URL}/keywords', headers=D_HEADERS, json={
         "method": "delete",
         "params": {"SelectionCriteria": {"Ids": keyword_ids}}
-    }, timeout=30)
+    }, timeout=15)
     data = resp.json()
     if 'error' in data:
         return f"Ошибка API: {data['error']}"
@@ -146,7 +147,7 @@ def tool_add_keywords(ad_group_id: int, keywords: list) -> str:
     resp = requests.post(f'{API_URL}/keywords', headers=D_HEADERS, json={
         "method": "add",
         "params": {"Keywords": kw_objects}
-    }, timeout=30)
+    }, timeout=15)
     data = resp.json()
     if 'error' in data:
         return f"Ошибка API: {data['error']}"
@@ -167,7 +168,7 @@ def _get_campaign_strategy(campaign_id: int) -> dict:
             "FieldNames": ["Id"],
             "TextCampaignFieldNames": ["BiddingStrategy"]
         }
-    }, timeout=30)
+    }, timeout=15)
     data = resp.json()
     if 'error' in data:
         raise RuntimeError(f"Ошибка API: {data['error']}")
@@ -197,7 +198,7 @@ def tool_update_bid(campaign_id: int, bid_rub: float) -> str:
                 "Network": {"BiddingStrategyType": "SERVING_OFF"}
             }}
         }]}
-    }, timeout=30)
+    }, timeout=15)
     data = resp.json()
     if 'error' in data:
         return f"Ошибка API: {data['error']}"
@@ -228,7 +229,7 @@ def tool_update_budget(campaign_id: int, budget_rub: float) -> str:
                 "Network": {"BiddingStrategyType": "SERVING_OFF"}
             }}
         }]}
-    }, timeout=30)
+    }, timeout=15)
     data = resp.json()
     if 'error' in data:
         return f"Ошибка API: {data['error']}"
@@ -247,7 +248,7 @@ def tool_get_ad_groups(campaign_id: int = None) -> str:
             "SelectionCriteria": {"CampaignIds": ids},
             "FieldNames": ["Id", "Name", "CampaignId", "Status"]
         }
-    }, timeout=30)
+    }, timeout=15)
     data = resp.json()
     if 'error' in data:
         return f"Ошибка API: {data['error']}"
@@ -284,7 +285,7 @@ def tool_get_keyword_stats(days: int = 7) -> str:
         }
     }
     for _ in range(10):
-        resp = requests.post(REPORTS_URL, headers=D_REPORT_HEADERS, json=body, timeout=60)
+        resp = requests.post(REPORTS_URL, headers=D_REPORT_HEADERS, json=body, timeout=45)
         if resp.status_code == 200:
             reader = csv.DictReader(io.StringIO(resp.text), delimiter='\t')
             rows = [r for r in reader if int(r['CampaignId']) in OUR_CAMPAIGN_IDS]
@@ -332,7 +333,7 @@ def tool_create_campaign(name: str, bid_rub: float = 30.0, weekly_budget_rub: fl
                 }
             }]
         }
-    }, timeout=30)
+    }, timeout=15)
     data = resp.json()
     if 'error' in data:
         return f"Ошибка API: {data['error']}"
@@ -361,7 +362,7 @@ def tool_create_ad(ad_group_id: int, title1: str, title2: str, text: str, href: 
                 }
             }]
         }
-    }, timeout=30)
+    }, timeout=15)
     data = resp.json()
     if 'error' in data:
         return f"Ошибка API: {data['error']}"
@@ -386,7 +387,7 @@ def tool_create_ad_group(campaign_id: int, name: str) -> str:
                 "RegionIds": [1]
             }]
         }
-    }, timeout=30)
+    }, timeout=15)
     data = resp.json()
     if 'error' in data:
         return f"Ошибка API: {data['error']}"
@@ -406,7 +407,7 @@ def tool_archive_ad_group(ad_group_id: int) -> str:
     resp = requests.post(f'{API_URL}/adgroups', headers=D_HEADERS, json={
         "method": "suspend",
         "params": {"SelectionCriteria": {"Ids": [ad_group_id]}}
-    }, timeout=30)
+    }, timeout=15)
     data = resp.json()
     if 'error' in data:
         return f"Ошибка suspend: {data['error']}"
@@ -415,7 +416,7 @@ def tool_archive_ad_group(ad_group_id: int) -> str:
     resp2 = requests.post(f'{API_URL}/adgroups', headers=D_HEADERS, json={
         "method": "archive",
         "params": {"SelectionCriteria": {"Ids": [ad_group_id]}}
-    }, timeout=30)
+    }, timeout=15)
     data2 = resp2.json()
     if 'error' in data2:
         return f"Группа остановлена, но архивировать не удалось: {data2['error']}"
@@ -443,7 +444,7 @@ def tool_update_autotargeting_categories(ad_group_id: int, enabled_categories: l
                 "AutotargetingCategories": categories_payload
             }]
         }
-    }, timeout=30)
+    }, timeout=15)
     data = resp.json()
     if 'error' in data:
         return f"Ошибка API: {data['error']}"
@@ -471,7 +472,7 @@ def tool_get_campaign_settings(campaign_id: int = None) -> str:
             "FieldNames": ["Id", "Name", "Status", "State"],
             "TextCampaignFieldNames": ["BiddingStrategy"]
         }
-    }, timeout=30)
+    }, timeout=15)
     data = resp.json()
     if 'error' in data:
         return f"Ошибка API: {data['error']}"
@@ -508,7 +509,7 @@ def tool_get_keyword_bids(campaign_id: int) -> str:
             "FieldNames": ["Id", "Keyword", "Bid", "ContextBid", "Status", "AdGroupId"],
             "Page": {"Limit": 10000}
         }
-    }, timeout=30)
+    }, timeout=15)
     data = resp.json()
     if 'error' in data:
         return f"Ошибка API: {data['error']}"
@@ -546,7 +547,7 @@ def tool_update_keyword_bids(campaign_id: int, bid_rub: float, keyword_ids: list
                 "FieldNames": ["Id", "Keyword"],
                 "Page": {"Limit": 10000}
             }
-        }, timeout=30)
+        }, timeout=15)
         data = resp.json()
         if 'error' in data:
             return f"Ошибка получения ключей: {data['error']}"
@@ -565,7 +566,7 @@ def tool_update_keyword_bids(campaign_id: int, bid_rub: float, keyword_ids: list
             {"Id": kid, "Bid": bid_micro, "ContextBid": bid_micro}
             for kid in keyword_ids
         ]}
-    }, timeout=30)
+    }, timeout=15)
     data2 = resp2.json()
     if 'error' in data2:
         return f"Ошибка keywords.update: {data2['error']}"
@@ -613,7 +614,7 @@ def tool_update_campaign_strategy(campaign_id: int, strategy: str,
                 "Network": {"BiddingStrategyType": "SERVING_OFF"}
             }}
         }]}
-    }, timeout=30)
+    }, timeout=15)
     data = resp.json()
     if 'error' in data:
         return f"Ошибка API: {data['error']}"
@@ -650,7 +651,7 @@ def tool_set_autotargeting_bid(campaign_id: int, bid_rub: float = 0.3) -> str:
             "SelectionCriteria": {"CampaignIds": [campaign_id]},
             "FieldNames": ["Id", "Name"]
         }
-    }, timeout=30)
+    }, timeout=15)
     data = resp.json()
     if 'error' in data:
         return f"Ошибка получения групп: {data['error']}"
@@ -666,7 +667,7 @@ def tool_set_autotargeting_bid(campaign_id: int, bid_rub: float = 0.3) -> str:
             "SelectionCriteria": {"AdGroupIds": group_ids},
             "FieldNames": ["Id", "AdGroupId", "CampaignId", "Bid", "ContextBid", "State"]
         }
-    }, timeout=30)
+    }, timeout=15)
 
     # Диагностика если /autotargetings недоступен
     if resp2.status_code != 200 or not resp2.text.strip():
@@ -698,7 +699,7 @@ def tool_set_autotargeting_bid(campaign_id: int, bid_rub: float = 0.3) -> str:
     resp3 = requests.post(f'{API_URL}/bids', headers=D_HEADERS, json={
         "method": "set",
         "params": {"Bids": bid_objects}
-    }, timeout=30)
+    }, timeout=15)
     data3 = resp3.json()
     if 'error' in data3:
         return (
@@ -739,7 +740,7 @@ def tool_switch_to_manual_bids(campaign_id: int, bid_rub: float = 0.3) -> str:
                 "Network": {"BiddingStrategyType": "SERVING_OFF"}
             }}
         }]}
-    }, timeout=30)
+    }, timeout=15)
     data = resp.json()
     if 'error' in data:
         return f"Ошибка переключения стратегии: {data['error']}"
@@ -755,7 +756,7 @@ def tool_switch_to_manual_bids(campaign_id: int, bid_rub: float = 0.3) -> str:
             "FieldNames": ["Id", "Keyword", "Status"],
             "Page": {"Limit": 10000}
         }
-    }, timeout=30)
+    }, timeout=15)
     data2 = resp2.json()
     if 'error' in data2:
         return f"Стратегия переключена. Ошибка получения ключей: {data2['error']}"
@@ -769,7 +770,7 @@ def tool_switch_to_manual_bids(campaign_id: int, bid_rub: float = 0.3) -> str:
     resp3 = requests.post(f'{API_URL}/keywords', headers=D_HEADERS, json={
         "method": "update",
         "params": {"Keywords": kw_updates}
-    }, timeout=30)
+    }, timeout=15)
     data3 = resp3.json()
     if 'error' in data3:
         return f"Стратегия переключена. Ошибка обновления ставок ключей: {data3['error']}"
@@ -1240,7 +1241,8 @@ async def chat_stream(messages: list) -> AsyncGenerator[str, None]:
             log_tools.append({"name": tc["name"], "input": inp})
 
             try:
-                result = TOOL_FUNCTIONS[tc["name"]](inp)
+                fn = TOOL_FUNCTIONS[tc["name"]]
+                result = await asyncio.to_thread(fn, inp)
             except Exception as e:
                 result = f"Ошибка: {e}"
 
